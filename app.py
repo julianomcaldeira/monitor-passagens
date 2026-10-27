@@ -6,6 +6,7 @@ from flask import Flask, request, redirect, render_template_string, Response
 from db import conectar, init
 
 app = Flask(__name__)
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000
 SENHA = os.environ.get("PAINEL_SENHA", "")
 TP_TOKEN = os.environ.get("TP_TOKEN", "")
 MARKER = "796238"
@@ -94,6 +95,13 @@ def auth():
     if SENHA and not (a and a.password == SENHA):
         return Response("Senha", 401, {"WWW-Authenticate": 'Basic realm="painel"'})
 
+@app.before_first_request
+def _setup():
+    try:
+        init()
+    except Exception:
+        pass
+
 def resolver(t):
     t = t.strip()
     try:
@@ -169,28 +177,28 @@ def index():
     origem = origem_escolhida()
     f = "" if origem == "todos" else " and origem=%s"
     extra = () if origem == "todos" else (origem,)
-    c = conectar(); init(c)
-    dests = c.execute("select id,codigo,nome from destinos order by nome").fetchall()
-    cards = [dict(id=i, codigo=cod, nome=nome, a=analisar(c, "destino", cod, origem)) for i, cod, nome in dests]
-    cards.sort(key=lambda x: -(x["a"]["pct"] if x["a"] and x["a"]["n"] >= 5 else -999))
-    ult = c.execute("select max(ts) from precos").fetchone()[0]
-    ult_b = c.execute("select max(date_trunc('hour', ts)) from precos where tipo='barato'").fetchone()[0]
-    nac, inter = [], []
-    if ult_b:
-        cods = [r[0] for r in c.execute("""select destino from precos where tipo='barato'
-            and date_trunc('hour', ts)=%s""" + f + """ group by destino order by min(preco) limit 300""", (ult_b,) + extra).fetchall()]
-        for cod in cods:
-            lista = nac if nacional(cod) else inter
-            if len(lista) >= 30: continue
-            a = analisar(c, "barato", cod, origem)
-            if a: lista.append(a)
-            if len(nac) >= 30 and len(inter) >= 30: break
-        for l in (nac, inter):
-            l.sort(key=lambda x: (-x["pct"], x["atual"]["preco"]))
-    candidatos = [x["a"] for x in cards if x["a"] and x["a"]["n"] >= 5] + [b for b in nac + inter if b["n"] >= 5]
-    destaque = max(candidatos, key=lambda a: a["pct"], default=None)
-    if destaque and destaque["pct"] < 15: destaque = None
-    ult_txt = ult.replace(tzinfo=ult.tzinfo or timezone.utc).astimezone(BRT).strftime("%d/%m às %H:%M") if ult else None
+    with conectar() as c:
+        dests = c.execute("select id,codigo,nome from destinos order by nome").fetchall()
+        cards = [dict(id=i, codigo=cod, nome=nome, a=analisar(c, "destino", cod, origem)) for i, cod, nome in dests]
+        cards.sort(key=lambda x: -(x["a"]["pct"] if x["a"] and x["a"]["n"] >= 5 else -999))
+        ult = c.execute("select max(ts) from precos").fetchone()[0]
+        ult_b = c.execute("select max(date_trunc('hour', ts)) from precos where tipo='barato'").fetchone()[0]
+        nac, inter = [], []
+        if ult_b:
+            cods = [r[0] for r in c.execute("""select destino from precos where tipo='barato'
+                and date_trunc('hour', ts)=%s""" + f + """ group by destino order by min(preco) limit 300""", (ult_b,) + extra).fetchall()]
+            for cod in cods:
+                lista = nac if nacional(cod) else inter
+                if len(lista) >= 30: continue
+                a = analisar(c, "barato", cod, origem)
+                if a: lista.append(a)
+                if len(nac) >= 30 and len(inter) >= 30: break
+            for l in (nac, inter):
+                l.sort(key=lambda x: (-x["pct"], x["atual"]["preco"]))
+        candidatos = [x["a"] for x in cards if x["a"] and x["a"]["n"] >= 5] + [b for b in nac + inter if b["n"] >= 5]
+        destaque = max(candidatos, key=lambda a: a["pct"], default=None)
+        if destaque and destaque["pct"] < 15: destaque = None
+        ult_txt = ult.replace(tzinfo=ult.tzinfo or timezone.utc).astimezone(BRT).strftime("%d/%m às %H:%M") if ult else None
     return render_template_string(BASE + PAINEL, pagina="painel", cards=cards, nac=nac[:24], inter=inter[:24],
                                   ult=ult_txt, destaque=destaque, brl=brl,
                                   origem=origem, opcoes=OPCOES_ORIGEM)
@@ -297,17 +305,18 @@ def calendario(ida_d, volta_d, destino, origem="VCP"):
 # ---------- destinos ----------
 @app.post("/destinos")
 def add():
-    c = conectar(); init(c)
-    for t in request.form.get("q", "").split(","):
-        if t.strip():
-            r = resolver(t)
-            if r:
-                c.execute("insert into destinos(codigo,nome) values(%s,%s) on conflict do nothing", r)
+    with conectar() as c:
+        for t in request.form.get("q", "").split(","):
+            if t.strip():
+                r = resolver(t)
+                if r:
+                    c.execute("insert into destinos(codigo,nome) values(%s,%s) on conflict do nothing", r)
     return redirect(request.referrer or "/")
 
 @app.post("/destinos/<int:i>/del")
 def rem(i):
-    conectar().execute("delete from destinos where id=%s", (i,))
+    with conectar() as c:
+        c.execute("delete from destinos where id=%s", (i,))
     return redirect(request.referrer or "/")
 
 # ---------- templates ----------
