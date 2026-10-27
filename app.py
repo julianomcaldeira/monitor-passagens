@@ -356,6 +356,13 @@ def desmonitorar(i):
     return redirect(request.referrer or "/monitorados")
 
 
+TABS_JS = """<script>
+document.querySelectorAll('.tabs').forEach(t=>t.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  t.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('[data-grupo="'+t.dataset.grupo+'"]').forEach(p=>p.classList.toggle('on',p.dataset.tab===b.dataset.tab));
+}));</script>"""
+
+
 @app.route("/monitorados")
 def listar_monitorados():
     origem = origem_escolhida()
