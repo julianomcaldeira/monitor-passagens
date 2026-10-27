@@ -33,8 +33,5 @@ jobs:
         uses: sst/opencode/github@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run OpenCode
-        uses: sst/opencode/github@latest
-        env:
-          GITHUB_TOKEN: $\{\{ secrets.GITHUB_TOKEN \}\}
+        with:
+          model: opencode/big-pickle
