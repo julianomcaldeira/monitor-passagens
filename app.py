@@ -172,6 +172,7 @@ def analisar(c, tipo, destino, origem="todos"):
 
 # ---------- painel ----------
 @app.route("/")
+def index():
     origem = origem_escolhida()
     f = "" if origem == "todos" else " and origem=%s"
     extra = () if origem == "todos" else (origem,)
