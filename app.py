@@ -172,7 +172,6 @@ def analisar(c, tipo, destino, origem="todos"):
 
 # ---------- painel ----------
 @app.route("/")
-def index():
     origem = origem_escolhida()
     f = "" if origem == "todos" else " and origem=%s"
     extra = () if origem == "todos" else (origem,)
@@ -312,13 +311,84 @@ def add():
                     c.execute("insert into destinos(codigo,nome) values(%s,%s) on conflict do nothing", r)
     return redirect(request.referrer or "/")
 
+
 @app.post("/destinos/<int:i>/del")
 def rem(i):
     with conectar() as c:
         c.execute("delete from destinos where id=%s", (i,))
     return redirect(request.referrer or "/")
 
+
+# ---------- monitorar data específica ----------
+@app.post("/monitorar")
+def monitorar():
+    origem = origem_escolhida()
+    dest_txt = request.form.get("destino", "").strip()
+    ida = request.form.get("ida", "")
+    volta = request.form.get("volta", "") or None
+    try:
+        ida_d = date.fromisoformat(ida) if ida else None
+        volta_d = date.fromisoformat(volta) if volta else None
+    except ValueError:
+        return redirect(request.referrer or "/data")
+    if not ida_d or not dest_txt:
+        return redirect(request.referrer or "/data")
+    r = resolver(dest_txt)
+    if not r:
+        return redirect(request.referrer or "/data")
+    cod, nome = r
+    with conectar() as c:
+        try:
+            c.execute("""insert into monitorados(origem,destino,nome_destino,data_ida,data_volta)
+                         values(%s,%s,%s,%s,%s) on conflict do nothing""",
+                      (origem, cod, nome, ida_d, volta_d))
+        except Exception:
+            pass
+    ref = request.referrer or "/data"
+    return redirect(ref)
+
+
+@app.post("/monitorados/<int:i>/del")
+def desmonitorar(i):
+    with conectar() as c:
+        c.execute("delete from monitorados where id=%s", (i,))
+    return redirect(request.referrer or "/monitorados")
+
+
+@app.route("/monitorados")
+def listar_monitorados():
+    origem = origem_escolhida()
+    with conectar() as c:
+        rows = c.execute("""select id, origem, destino, nome_destino, data_ida, data_volta, criado_em
+                            from monitorados where ativo=true order by criado_em desc""").fetchall()
+        itens = []
+        for mid, orig, dest, nome, di, dv, criado in rows:
+            itens.append(dict(id=mid, origem=orig, destino=dest, nome=nome or nome_cidade(dest),
+                              data_ida=di, data_volta=dv, criado=criado))
+    return render_template_string(BASE + MONITORADOS, pagina="monitorados", itens=itens,
+                                  origem=origem, opcoes=OPCOES_ORIGEM, brl=brl, data_br=data_br)
+
 # ---------- templates ----------
+MONITORADOS = """
+<p class=sub>Passagens monitoradas por data específica. O coletor verifica essas combinações junto com seus destinos.</p>
+</div></header>
+<main class=w>
+<h3>Monitorando</h3>
+<p class=hint>Quando tiver preço bom você verá no painel.</p>
+<div class=g>
+{% for it in itens %}
+<div class=c>
+<form method=post action="/monitorados/{{it.id}}/del" onsubmit="return confirm('Parar de monitorar {{it.nome}}?')"><button class=del title="Remover">✕</button></form>
+<div class=cid>{{it.nome}}<span class=cod>{{it.destino}}</span></div>
+<div class=voo style="margin-top:10px">🛫 Saindo de <b>{{it.origem}}</b><br>📅 <b>{{data_br(it.data_ida)}}{% if it.data_volta %} a {{data_br(it.data_volta)}}{% endif %}</b>{% if it.data_volta %} ({{(it.data_volta - it.data_ida).days}} dias){% endif %}</div>
+<div class=grow></div>
+</div>
+{% else %}
+<div class=c><div class=vazio-c>Nenhuma passagem monitorada por data ainda. Vá em "Buscar por data", escolha ida/volta e destino e clique em "Monitorar esta data".</div></div>
+{% endfor %}
+</div>
+</main>""" + TABS_JS + "</body></html>"
+
 BASE = """<!doctype html><html lang=pt-BR><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>Monitor de Passagens</title>
 <link rel=preconnect href=https://fonts.googleapis.com>
@@ -405,7 +475,7 @@ svg.sp{width:100%;height:56px;margin-top:12px}
 </style></head><body>
 <header><div class=w>
 <div class=top><h1>✈️ Monitor de Passagens</h1>
-<nav class=menu><a href="/?origem={{origem}}" class="{{'on' if pagina=='painel' else ''}}">Painel</a><a href="/data?origem={{origem}}" class="{{'on' if pagina=='data' else ''}}">Buscar por data</a></nav></div>
+<nav class=menu><a href="/?origem={{origem}}" class="{{'on' if pagina=='painel' else ''}}">Painel</a><a href="/data?origem={{origem}}" class="{{'on' if pagina=='data' else ''}}">Buscar por data</a><a href="/monitorados?origem={{origem}}" class="{{'on' if pagina=='monitorados' else ''}}">Monitorados</a></nav></div>
 """
 
 TABS_JS = """<script>
@@ -495,6 +565,23 @@ BUSCA = """
 <div class=full><button class=btn style="width:100%">Buscar menor preço</button></div>
 </form>
 {% if sem_token %}<div class=aviso>⚠️ Falta configurar a chave TP_TOKEN no Render (Environment). Sem ela a busca não traz resultados.</div>{% endif %}
+
+{% if res and res.destino %}
+<div style="margin-top:16px">
+<form method=post action=/monitorar>
+<input type=hidden name=destino value="{{res.destino[1] if res.destino else destino}}">
+<input type=hidden name=ida value="{{ida}}">
+<input type=hidden name=volta value="{{volta}}">
+<input type=hidden name=origem value="{{origem}}">
+<button class=btn style="background:#059669">🔔 Monitorar esta data</button>
+</form>
+<p class=hint style="margin-top:8px">O sistema vai acompanhar o preço para esta combinação (ida{% if volta %} e volta{% endif %}) todos os dias.</p>
+</div>
+{% elif res and not res.erro and not res.destino %}
+<div style="margin-top:16px">
+<p class=hint>Para monitorar uma data específica, informe o destino no campo acima.</p>
+</div>
+{% endif %}
 
 {% if res %}{% if res.erro %}<div class=aviso>{{res.erro}}</div>{% else %}
 

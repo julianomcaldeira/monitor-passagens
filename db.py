@@ -39,6 +39,18 @@ def init(c=None):
                 );
                 create index if not exists ix_precos on precos(tipo, destino, ts);
                 create index if not exists ix_precos_origem on precos(tipo, destino, origem, ts);
+                create table if not exists monitorados(
+                    id serial primary key,
+                    criado_em timestamptz default now(),
+                    origem text not null,
+                    destino text not null,
+                    nome_destino text,
+                    data_ida date not null,
+                    data_volta date,
+                    ativo boolean default true,
+                    unico boolean default false,
+                    constraint uq_monitorado unique(origem, destino, data_ida, data_volta)
+                );
                 """)
         return
     c.execute("""
@@ -62,4 +74,16 @@ def init(c=None):
     );
     create index if not exists ix_precos on precos(tipo, destino, ts);
     create index if not exists ix_precos_origem on precos(tipo, destino, origem, ts);
+    create table if not exists monitorados(
+        id serial primary key,
+        criado_em timestamptz default now(),
+        origem text not null,
+        destino text not null,
+        nome_destino text,
+        data_ida date not null,
+        data_volta date,
+        ativo boolean default true,
+        unico boolean default false,
+        constraint uq_monitorado unique(origem, destino, data_ida, data_volta)
+    );
     """)

@@ -64,6 +64,32 @@ def main():
             time.sleep(0.3)
         for x in melhores.values():
             salvar(c, x, o, "barato")
+
+    # Monitorados por data específica
+    try:
+        mon = c.execute("""select origem, destino, data_ida, data_volta from monitorados where ativo=true""").fetchall()
+        for o, d, di, dv in mon:
+            p = {"origin": o, "destination": d, "departure_at": di.isoformat(), "currency": "brl",
+                 "sorting": "price", "one_way": "false" if dv else "true", "limit": 1000, "token": TOKEN}
+            if dv:
+                p["return_at"] = dv.isoformat()
+            try:
+                r = requests.get(URL, params=p, timeout=30)
+                r.raise_for_status()
+                rows = r.json().get("data", []) or []
+                if rows:
+                    x = rows[0]
+                    volta = (x.get("return_at") or "")[:10] or None
+                    c.execute("""insert into precos(tipo,origem,destino,data_ida,data_volta,preco,companhia,link)
+                                 values(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                              ("monitorado", o, x["destination"], x["departure_at"][:10], volta,
+                               x["price"], x.get("airline"), link(x)))
+                time.sleep(0.3)
+            except Exception as e:
+                print("erro monitorado", o, d, di, dv, e)
+    except Exception as e:
+        print("erro mon", e)
+
     print("ok", len(destinos), "destinos")
 
 if __name__ == "__main__":
