@@ -95,12 +95,11 @@ def auth():
     if SENHA and not (a and a.password == SENHA):
         return Response("Senha", 401, {"WWW-Authenticate": 'Basic realm="painel"'})
 
-@app.before_first_request
-def _setup():
-    try:
+try:
+    with app.app_context():
         init()
-    except Exception:
-        pass
+except Exception:
+    pass
 
 def resolver(t):
     t = t.strip()
