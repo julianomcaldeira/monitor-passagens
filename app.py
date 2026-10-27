@@ -12,6 +12,14 @@ MARKER = "796238"
 URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 BRT = ZoneInfo("America/Sao_Paulo")
 ORIGENS = ["VCP", "GRU", "CGH"]
+OPCOES_ORIGEM = [("VCP", "Viracopos"), ("GRU", "Guarulhos"), ("CGH", "Congonhas"), ("todos", "Todos")]
+
+def origem_escolhida():
+    o = request.args.get("origem", "VCP")
+    return o if o in ("VCP", "GRU", "CGH", "todos") else "VCP"
+
+def origens_de(o):
+    return ORIGENS if o == "todos" else [o]
 
 AEROPORTOS = {"VCP": "Viracopos", "GRU": "Guarulhos", "CGH": "Congonhas"}
 CIAS = {"AD": "Azul", "LA": "LATAM", "JJ": "LATAM", "G3": "Gol", "TP": "TAP", "AA": "American",
@@ -131,13 +139,15 @@ def sparkline(serie, w=280, h=56):
     area = f"0,{h} " + linha + f" {w},{h}"
     return dict(linha=linha, area=area, ux=pts[-1][0], uy=pts[-1][1], w=w, h=h)
 
-def analisar(c, tipo, destino):
+def analisar(c, tipo, destino, origem="todos"):
+    f = "" if origem == "todos" else " and origem=%s"
+    extra = () if origem == "todos" else (origem,)
     hist = c.execute("""select date_trunc('hour', ts) h, min(preco) from precos
-        where tipo=%s and destino=%s group by h order by h""", (tipo, destino)).fetchall()
+        where tipo=%s and destino=%s""" + f + """ group by h order by h""", (tipo, destino) + extra).fetchall()
     if not hist: return None
     ultima = hist[-1][0]
     rows = c.execute("""select origem,preco,data_ida,data_volta,companhia,link from precos
-        where tipo=%s and destino=%s and date_trunc('hour', ts)=%s""", (tipo, destino, ultima)).fetchall()
+        where tipo=%s and destino=%s and date_trunc('hour', ts)=%s""" + f, (tipo, destino, ultima) + extra).fetchall()
     por_origem = {}
     for o, p, di, dv, cia, l in rows:
         if o not in por_origem or p < por_origem[o]["preco"]:
@@ -156,20 +166,23 @@ def analisar(c, tipo, destino):
 # ---------- painel ----------
 @app.route("/")
 def index():
+    origem = origem_escolhida()
+    f = "" if origem == "todos" else " and origem=%s"
+    extra = () if origem == "todos" else (origem,)
     c = conectar(); init(c)
     dests = c.execute("select id,codigo,nome from destinos order by nome").fetchall()
-    cards = [dict(id=i, codigo=cod, nome=nome, a=analisar(c, "destino", cod)) for i, cod, nome in dests]
+    cards = [dict(id=i, codigo=cod, nome=nome, a=analisar(c, "destino", cod, origem)) for i, cod, nome in dests]
     cards.sort(key=lambda x: -(x["a"]["pct"] if x["a"] and x["a"]["n"] >= 5 else -999))
     ult = c.execute("select max(ts) from precos").fetchone()[0]
     ult_b = c.execute("select max(date_trunc('hour', ts)) from precos where tipo='barato'").fetchone()[0]
     nac, inter = [], []
     if ult_b:
         cods = [r[0] for r in c.execute("""select destino from precos where tipo='barato'
-            and date_trunc('hour', ts)=%s group by destino order by min(preco) limit 300""", (ult_b,)).fetchall()]
+            and date_trunc('hour', ts)=%s""" + f + """ group by destino order by min(preco) limit 300""", (ult_b,) + extra).fetchall()]
         for cod in cods:
             lista = nac if nacional(cod) else inter
             if len(lista) >= 30: continue
-            a = analisar(c, "barato", cod)
+            a = analisar(c, "barato", cod, origem)
             if a: lista.append(a)
             if len(nac) >= 30 and len(inter) >= 30: break
         for l in (nac, inter):
@@ -179,7 +192,8 @@ def index():
     if destaque and destaque["pct"] < 15: destaque = None
     ult_txt = ult.replace(tzinfo=ult.tzinfo or timezone.utc).astimezone(BRT).strftime("%d/%m às %H:%M") if ult else None
     return render_template_string(BASE + PAINEL, pagina="painel", cards=cards, nac=nac[:24], inter=inter[:24],
-                                  ult=ult_txt, destaque=destaque, brl=brl)
+                                  ult=ult_txt, destaque=destaque, brl=brl,
+                                  origem=origem, opcoes=OPCOES_ORIGEM)
 
 # ---------- busca por data ----------
 @app.route("/data")
@@ -188,6 +202,7 @@ def por_data():
     ida = request.args.get("ida", "")
     volta = request.args.get("volta", "")
     dest_txt = request.args.get("destino", "").strip()
+    origem = origem_escolhida()
     res = None
     if ida:
         try:
@@ -196,11 +211,12 @@ def por_data():
         except ValueError:
             ida_d = None
         if ida_d:
-            res = buscar_data(ida_d, volta_d, dest_txt)
+            res = buscar_data(ida_d, volta_d, dest_txt, origem)
     return render_template_string(BASE + BUSCA, pagina="data", ida=ida, volta=volta, destino=dest_txt,
-                                  hoje=hoje.isoformat(), res=res, brl=brl, sem_token=not TP_TOKEN)
+                                  hoje=hoje.isoformat(), res=res, brl=brl, sem_token=not TP_TOKEN,
+                                  origem=origem, opcoes=OPCOES_ORIGEM)
 
-def buscar_data(ida_d, volta_d, dest_txt):
+def buscar_data(ida_d, volta_d, dest_txt, origem="VCP"):
     destino = None
     if dest_txt:
         r = resolver(dest_txt)
@@ -213,11 +229,12 @@ def buscar_data(ida_d, volta_d, dest_txt):
 
     melhores = {}   # por destino, o mais barato entre os 3 aeroportos
     por_aero = {}   # quando há destino: o mais barato de cada aeroporto
-    for o in ORIGENS:
+    for o in origens_de(origem):
         for x in api(dict(base, origin=o)):
             v = voo(x, o)
             d = v["destino"]
-            if d not in melhores or v["preco"] < melhores[d]["preco"]:
+            atual = melhores.get(d)
+            if not atual or melhor_que(v, atual):
                 melhores[d] = v
             if destino and (o not in por_aero or v["preco"] < por_aero[o]["preco"]):
                 por_aero[o] = v
@@ -228,15 +245,23 @@ def buscar_data(ida_d, volta_d, dest_txt):
                inter=[v for v in lista if not nacional(v["destino"])][:30])
     if destino:
         out["aeroportos"] = sorted(por_aero.values(), key=lambda v: v["preco"])
-        out["calendario"] = calendario(ida_d, volta_d, destino[0])
+        out["calendario"] = calendario(ida_d, volta_d, destino[0], origem)
     return out
 
-def calendario(ida_d, volta_d, destino):
+def melhor_que(novo, atual):
+    """Viracopos tem prioridade: outro aeroporto só ganha se for 15% mais barato."""
+    if novo["origem"] == "VCP" and atual["origem"] != "VCP":
+        return novo["preco"] < atual["preco"] / 0.85
+    if atual["origem"] == "VCP" and novo["origem"] != "VCP":
+        return novo["preco"] < atual["preco"] * 0.85
+    return novo["preco"] < atual["preco"]
+
+def calendario(ida_d, volta_d, destino, origem="VCP"):
     """Menor preço de cada dia de ida no mês escolhido, mantendo a mesma duração da viagem."""
     mes = ida_d.strftime("%Y-%m")
     dias_viagem = (volta_d - ida_d).days if volta_d else None
     por_dia = {}
-    for o in ORIGENS:
+    for o in origens_de(origem):
         for x in api({"origin": o, "destination": destino, "departure_at": mes,
                       "one_way": "false" if volta_d else "true"}):
             di = (x.get("departure_at") or "")[:10]
@@ -278,12 +303,12 @@ def add():
             r = resolver(t)
             if r:
                 c.execute("insert into destinos(codigo,nome) values(%s,%s) on conflict do nothing", r)
-    return redirect("/")
+    return redirect(request.referrer or "/")
 
 @app.post("/destinos/<int:i>/del")
 def rem(i):
     conectar().execute("delete from destinos where id=%s", (i,))
-    return redirect("/")
+    return redirect(request.referrer or "/")
 
 # ---------- templates ----------
 BASE = """<!doctype html><html lang=pt-BR><head><meta charset=utf-8>
@@ -302,9 +327,13 @@ h1{margin:0;font-size:24px;font-weight:800}.upd{color:#94a3b8;font-size:13px}
 nav.menu{display:flex;gap:6px;background:#1e293b;padding:4px;border-radius:12px}
 nav.menu a{color:#cbd5e1;text-decoration:none;padding:8px 14px;border-radius:9px;font-size:14px;font-weight:600}
 nav.menu a.on{background:#fff;color:#0f172a}
+.orig{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:16px 0 0}
+.orig span{color:#94a3b8;font-size:13px;margin-right:4px}
+.orig a{color:#e2e8f0;text-decoration:none;padding:7px 14px;border-radius:99px;border:1px solid #334155;font-size:14px;font-weight:600}
+.orig a.on{background:#2563eb;border-color:#2563eb;color:#fff}.orig a .star{font-size:11px;opacity:.8}
 .sub{color:#cbd5e1;margin:14px 0 20px;font-size:15px}
 form.add{display:flex;gap:8px;max-width:640px}
-input[type=text],input[type=date]{padding:14px 16px;border-radius:12px;border:1px solid var(--ln);font:inherit;font-size:15px;background:#fff;color:var(--tx)}
+input[type=text],input[type=date],select{padding:14px 16px;border-radius:12px;border:1px solid var(--ln);font:inherit;font-size:15px;background:#fff;color:var(--tx)}
 form.add input{flex:1;border:0}
 .btn{padding:14px 20px;border:0;border-radius:12px;background:var(--pri);color:#fff;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;text-align:center}
 .btn:hover{filter:brightness(1.1)}
@@ -345,9 +374,9 @@ svg.sp{width:100%;height:56px;margin-top:12px}
 .painel-tab{display:none}.painel-tab.on{display:grid}
 .leg{margin-top:36px;background:var(--card);border-radius:14px;padding:16px 20px;font-size:13px;color:var(--mu);line-height:1.8}
 .leg .pill{margin:0 6px 0 0;font-size:12px}
-.busca{background:var(--card);border-radius:20px;padding:22px;box-shadow:0 10px 30px #0f172a1a;display:grid;grid-template-columns:1fr 1fr 1.4fr auto;gap:12px;align-items:end}
+.busca{background:var(--card);border-radius:20px;padding:22px;box-shadow:0 10px 30px #0f172a1a;display:grid;grid-template-columns:1fr 1fr 1fr 1.4fr auto;gap:12px;align-items:end}
 .busca label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--mu);display:block;margin-bottom:6px}
-.busca input{width:100%}
+.busca input,.busca select{width:100%}
 .aviso{background:var(--laranjabg);color:var(--laranja);border-radius:12px;padding:14px 16px;margin-top:16px;font-size:14px}
 .cal{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 1px 3px #0000000f}
 .cal .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:12px}
@@ -368,7 +397,7 @@ svg.sp{width:100%;height:56px;margin-top:12px}
 </style></head><body>
 <header><div class=w>
 <div class=top><h1>✈️ Monitor de Passagens</h1>
-<nav class=menu><a href="/" class="{{'on' if pagina=='painel' else ''}}">Painel</a><a href="/data" class="{{'on' if pagina=='data' else ''}}">Buscar por data</a></nav></div>
+<nav class=menu><a href="/?origem={{origem}}" class="{{'on' if pagina=='painel' else ''}}">Painel</a><a href="/data?origem={{origem}}" class="{{'on' if pagina=='data' else ''}}">Buscar por data</a></nav></div>
 """
 
 TABS_JS = """<script>
@@ -378,8 +407,9 @@ document.querySelectorAll('.tabs').forEach(t=>t.querySelectorAll('button').forEa
 }));</script>"""
 
 PAINEL = """
-<p class=sub>Ida e volta saindo de Viracopos, Guarulhos ou Congonhas. O painel compara o preço de hoje com o que esse trecho costuma custar.
+<p class=sub>Ida e volta. Viracopos vem primeiro; em "Todos", outro aeroporto só aparece se for pelo menos 15% mais barato. O painel compara o preço de hoje com o que esse trecho costuma custar.
 <span class=upd>{% if ult %}Atualizado em {{ult}}.{% else %}Aguardando primeira coleta.{% endif %}</span></p>
+<div class=orig style="margin:0 0 16px"><span>Saindo de:</span>{% for cod, nome in opcoes %}<a href="/?origem={{cod}}" class="{{'on' if origem==cod else ''}}">{{nome}}{% if cod=='VCP' %} <span class=star>★</span>{% endif %}</a>{% endfor %}</div>
 <form class=add method=post action=/destinos><input type=text name=q placeholder="Adicionar destinos: Lisboa, Orlando, Santiago..." required><button class=btn>Adicionar</button></form>
 </div></header>
 
@@ -426,7 +456,7 @@ PAINEL = """
 </div>
 
 <h3>Voos baratos agora</h3>
-<p class=hint>Destinos que você não salvou, mas que estão com preço bom saindo de Viracopos ou Guarulhos.</p>
+<p class=hint>Destinos que você não salvou, mas que estão com preço bom saindo do aeroporto escolhido.{% if origem=="CGH" %} Congonhas tem poucos voos internacionais.{% endif %}</p>
 <div class=tabs data-grupo=bar><button class=on data-tab=nac>🇧🇷 Nacionais<span>{{nac|length}}</span></button><button data-tab=int>🌎 Internacionais<span>{{inter|length}}</span></button></div>
 {% for chave, lista in [('nac', nac), ('int', inter)] %}
 <div class="gb painel-tab {{'on' if chave=='nac' else ''}}" data-grupo=bar data-tab={{chave}}>
@@ -446,12 +476,13 @@ PAINEL = """
 </main>""" + TABS_JS + "</body></html>"
 
 BUSCA = """
-<p class=sub>Escolha a data da viagem. O painel mostra o menor preço saindo de Viracopos, Guarulhos ou Congonhas. Com um destino, mostra também o calendário do mês para achar o dia mais barato.</p>
+<p class=sub>Escolha a data da viagem. O painel mostra o menor preço saindo de Viracopos (padrão) ou do aeroporto que você escolher. Com um destino, mostra também o calendário do mês para achar o dia mais barato.</p>
 </div></header>
 <main class=w>
 <form class=busca method=get action=/data>
 <div><label>Ida</label><input type=date name=ida value="{{ida}}" min="{{hoje}}" required></div>
 <div><label>Volta (opcional)</label><input type=date name=volta value="{{volta}}" min="{{hoje}}"></div>
+<div><label>Saindo de</label><select name=origem>{% for cod, nome in opcoes %}<option value="{{cod}}" {{'selected' if origem==cod else ''}}>{{nome}}{{' ★' if cod=='VCP' else ''}}</option>{% endfor %}</select></div>
 <div class=full><label>Destino (opcional)</label><input type=text name=destino value="{{destino}}" placeholder="Vazio = todos os destinos"></div>
 <div class=full><button class=btn style="width:100%">Buscar menor preço</button></div>
 </form>
@@ -461,7 +492,7 @@ BUSCA = """
 
 {% if res.destino %}
 <h3>{{res.destino[1]}} · {{res.titulo}}</h3>
-<p class=hint>Menor preço por aeroporto e o mapa de preços do mês{% if res.calendario and res.calendario.dias_viagem %} (viagens de cerca de {{res.calendario.dias_viagem}} dias){% endif %}.</p>
+<p class=hint>{{"Menor preço por aeroporto" if origem=="todos" else "Menor preço"}} e o mapa de preços do mês{% if res.calendario and res.calendario.dias_viagem %} (viagens de cerca de {{res.calendario.dias_viagem}} dias){% endif %}.</p>
 <div class=duas>
 <div class=cal>{% set cal = res.calendario %}
 {% if cal %}
@@ -484,7 +515,7 @@ BUSCA = """
 
 {% else %}
 <h3>Menor preço para {{res.titulo}}</h3>
-<p class=hint>{{'Ida e volta' if res.ida_volta else 'Só ida'}}. O mais barato entre os três aeroportos para cada destino.</p>
+<p class=hint>{{'Ida e volta' if res.ida_volta else 'Só ida'}}{% if origem=='todos' %}. Viracopos tem prioridade; outro aeroporto só aparece se for 15% mais barato.{% endif %}</p>
 <div class=tabs data-grupo=dt><button class=on data-tab=nac>🇧🇷 Nacionais<span>{{res.nac|length}}</span></button><button data-tab=int>🌎 Internacionais<span>{{res.inter|length}}</span></button></div>
 {% for chave, lista in [('nac', res.nac), ('int', res.inter)] %}
 <div class="gb painel-tab {{'on' if chave=='nac' else ''}}" data-grupo=dt data-tab={{chave}}>
