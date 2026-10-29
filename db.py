@@ -103,6 +103,12 @@ create table if not exists chat(
     papel text not null,
     conteudo text not null
 );
+create table if not exists chat_tarefas(
+    id bigserial primary key,
+    criado_em timestamptz default now(),
+    status text not null default 'processando',
+    resposta text
+);
 alter table monitorados add column if not exists viagem_id int references viagens(id) on delete set null;
 """
 

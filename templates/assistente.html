@@ -64,11 +64,25 @@ async function enviar() {
   document.getElementById('vazio')?.remove();
   bolha('user', texto); t.value = ''; t.style.height = 'auto'; b.disabled = true;
   const espera = bolha('assistant', '', '<span class="animate-pulse text-slate-500">Pensando e consultando dados…</span>');
+  const erro = m => espera.innerHTML = '<span class="text-red-600">' + DOMPurify.sanitize(m) + '</span>';
   try {
     const r = await fetch('/assistente/enviar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto }) });
-    const j = await r.json();
-    espera.innerHTML = j.resposta ? md(j.resposta) : '<span class="text-red-600">' + DOMPurify.sanitize(j.erro || 'Erro') + '</span>';
-  } catch (e) { espera.innerHTML = '<span class="text-red-600">Falha de conexão. Tente de novo.</span>'; }
+    const j = await r.json().catch(() => ({ erro: 'Servidor respondeu ' + r.status + '. Tente de novo.' }));
+    if (!j.tarefa) { erro(j.erro || 'Erro'); }
+    else {
+      const ini = Date.now(); let falhas = 0;
+      while (true) {
+        await new Promise(ok => setTimeout(ok, 2000));
+        const s = Math.round((Date.now() - ini) / 1000);
+        espera.querySelector('span') && (espera.querySelector('span').textContent = 'Pensando e consultando dados… ' + s + 's');
+        let st;
+        try { st = await (await fetch('/assistente/tarefa/' + j.tarefa)).json(); falhas = 0; }
+        catch (e) { if (++falhas > 5) { erro('Falha de conexão. Tente de novo.'); break; } continue; }
+        if (st.status === 'ok') { espera.innerHTML = md(st.resposta); break; }
+        if (st.status === 'erro') { erro(st.resposta || 'Erro'); break; }
+      }
+    }
+  } catch (e) { erro('Falha de conexão. Tente de novo.'); }
   b.disabled = false; lista.scrollTop = lista.scrollHeight; t.focus();
 }
 if (t.value) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }

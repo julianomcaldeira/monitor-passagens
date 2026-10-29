@@ -1,4 +1,4 @@
-import os, time, hmac, hashlib
+import os, time, hmac, hashlib, threading
 from datetime import timezone, date, timedelta
 from flask import Flask, request, redirect, render_template, jsonify, session, url_for
 from db import conectar, init
@@ -22,7 +22,7 @@ LIVRES = ("login", "static")
 def auth():
     if not SENHA or request.endpoint in LIVRES or session.get("ok"):
         return
-    if request.path.startswith("/assistente/enviar"):
+    if request.path.startswith(("/assistente/enviar", "/assistente/tarefa")):
         return jsonify(erro="Sessão expirada. Recarregue a página e entre de novo."), 401
     return redirect(url_for("login", prox=request.full_path.rstrip("?")))
 
@@ -319,15 +319,32 @@ def assistente():
 
 @app.post("/assistente/enviar")
 def assistente_enviar():
+    # Responde na hora com o id da tarefa; o processamento (que pode levar minutos) roda em segundo plano.
     texto = (request.get_json(silent=True) or {}).get("texto", "").strip()
     if not texto: return jsonify(erro="mensagem vazia"), 400
+    with conectar() as c:
+        tid = c.execute("insert into chat_tarefas default values returning id").fetchone()[0]
+    threading.Thread(target=_processar, args=(tid, texto), daemon=True).start()
+    return jsonify(tarefa=tid)
+
+def _processar(tid, texto):
     try:
-        resposta = ia.responder(texto)
+        status, resp = "ok", ia.responder(texto)
     except Exception as e:
         print("assistente", e)
-        return jsonify(erro=f"Erro ao falar com o assistente: {e}"), 502
+        status, resp = "erro", f"Erro ao falar com o assistente: {e}"
     _painel_cache["key"] = None
-    return jsonify(resposta=resposta)
+    with conectar() as c:
+        c.execute("update chat_tarefas set status=%s, resposta=%s where id=%s", (status, resp, tid))
+
+@app.route("/assistente/tarefa/<int:tid>")
+def assistente_tarefa(tid):
+    with conectar() as c:
+        r = c.execute("select status,resposta,extract(epoch from now()-criado_em) from chat_tarefas where id=%s", (tid,)).fetchone()
+    if not r: return jsonify(status="erro", resposta="Tarefa não encontrada."), 404
+    if r[0] == "processando" and r[2] > 600:  # servidor reiniciou no meio
+        return jsonify(status="erro", resposta="A resposta demorou demais. Tente de novo.")
+    return jsonify(status=r[0], resposta=r[1])
 
 @app.post("/assistente/limpar")
 def assistente_limpar():
