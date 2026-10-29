@@ -21,7 +21,11 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
 # O Render fica atrás de um proxy HTTPS: confia no X-Forwarded-Proto para saber que a conexão é segura
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-LIVRES = ("login", "static")
+LIVRES = ("login", "static", "favicon")
+
+@app.route("/favicon.ico")
+def favicon():
+    return redirect("/static/favicon.svg", 301)
 
 @app.before_request
 def auth():
