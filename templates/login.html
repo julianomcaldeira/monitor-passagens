@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Entrar · Gestor de Viagens</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<script>try { if (localStorage.tema === 'escuro' || (!localStorage.tema && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark'); } catch (e) {}</script>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } } };</script>
+</head>
+<body class="min-h-screen grid place-items-center bg-slate-900 font-sans px-4">
+  <form method="post" class="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-950 dark:text-slate-100 p-7 shadow-xl">
+    <div class="text-3xl">✈️</div>
+    <h1 class="text-xl font-extrabold mt-2">Gestor de Viagens</h1>
+    <p class="text-sm text-slate-500 mt-1">Digite sua senha para entrar.</p>
+    <input type="hidden" name="prox" value="{{prox}}">
+    <input type="password" name="senha" autofocus required autocomplete="current-password" placeholder="Senha"
+      class="mt-5 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+    {% if erro %}<p class="text-sm text-red-600 mt-2">{{erro}}</p>{% endif %}
+    <button class="mt-4 w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Entrar</button>
+  </form>
+</body>
+</html>

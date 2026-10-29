@@ -53,12 +53,17 @@
       {% for k, href, ic, nome in menu %}<a href="{{href}}" class="nav-a {{'on' if pagina==k}}"><span>{{ic}}</span>{{nome}}</a>{% endfor %}
     </nav>
     <button onclick="trocarTema()" class="nav-a mt-auto">🌓 Tema</button>
+    <form method="post" action="/logout"><button class="nav-a w-full">🚪 Sair</button></form>
   </aside>
 
   <div class="flex-1 min-w-0 pb-20 md:pb-0">
     <header class="md:hidden flex items-center justify-between bg-slate-900 text-white px-4 py-3 sticky top-0 z-20">
       <a href="/" class="font-extrabold">✈️ Gestor de Viagens</a>
-      <button onclick="trocarTema()" aria-label="Trocar tema">🌓</button>
+      <div class="flex items-center gap-4">
+        <a href="/perfil" aria-label="Perfil">👤</a>
+        <button onclick="trocarTema()" aria-label="Trocar tema">🌓</button>
+        <form method="post" action="/logout"><button class="text-sm font-semibold">Sair</button></form>
+      </div>
     </header>
     <main class="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
       {% block conteudo %}{% endblock %}

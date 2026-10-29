@@ -1,6 +1,6 @@
-import os, time
-from datetime import timezone, date
-from flask import Flask, request, redirect, render_template, Response, jsonify
+import os, time, hmac, hashlib
+from datetime import timezone, date, timedelta
+from flask import Flask, request, redirect, render_template, jsonify, session, url_for
 from db import conectar, init
 from servicos import (AEROPORTOS, BRT, OPCOES_ORIGEM, TP_TOKEN, analisar, nacional, resolver,
                       buscar_data, nome_cidade, brl, data_br)
@@ -13,11 +13,47 @@ STATUS = {"planejando": "Planejando", "confirmada": "Confirmada", "em_andamento"
 CAT_NOME = {"passagem": "Passagem", "hospedagem": "Hospedagem", "alimentacao": "Alimentação", "transporte": "Transporte",
             "passeios": "Passeios", "compras": "Compras", "seguro": "Seguro", "outros": "Outros"}
 
+app.secret_key = os.environ.get("SECRET_KEY") or hashlib.sha256(("gv:" + SENHA).encode()).hexdigest()
+app.permanent_session_lifetime = timedelta(days=30)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+LIVRES = ("login", "static")
+
 @app.before_request
 def auth():
-    a = request.authorization
-    if SENHA and not (a and a.password == SENHA):
-        return Response("Senha", 401, {"WWW-Authenticate": 'Basic realm="painel"'})
+    if not SENHA or request.endpoint in LIVRES or session.get("ok"):
+        return
+    if request.path.startswith("/assistente/enviar"):
+        return jsonify(erro="Sessão expirada. Recarregue a página e entre de novo."), 401
+    return redirect(url_for("login", prox=request.full_path.rstrip("?")))
+
+@app.after_request
+def sem_cache(r):
+    # Páginas sempre frescas: evita ver dados antigos após editar ou após deploy.
+    if r.mimetype in ("text/html", "application/json"):
+        r.headers["Cache-Control"] = "no-store"
+    if request.method == "POST":
+        _painel_cache["key"] = None  # qualquer alteração atualiza o painel na hora
+    return r
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    erro = None
+    prox = request.values.get("prox") or "/"
+    if not prox.startswith("/") or prox.startswith("//"):
+        prox = "/"
+    if request.method == "POST":
+        if hmac.compare_digest(request.form.get("senha", ""), SENHA):
+            session.clear()
+            session.permanent = True
+            session["ok"] = True
+            return redirect(prox)
+        erro = "Senha incorreta."
+    return render_template("login.html", erro=erro, prox=prox)
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 try:
     with app.app_context():
