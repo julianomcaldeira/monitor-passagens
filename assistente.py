@@ -4,9 +4,10 @@ from datetime import date
 from db import conectar
 import servicos as sv
 
-API_URL = "https://api.commandcode.ai/provider/v1/messages"
+BASE_URL = "https://api.commandcode.ai/provider/v1"
 API_KEY = os.environ.get("COMMANDCODE_API_KEY", "")
-MODELO = os.environ.get("COMMANDCODE_MODEL", "claude-sonnet-4-6")
+# Modelos "claude-*" usam /messages; os demais usam /chat/completions.
+MODELO = os.environ.get("COMMANDCODE_MODEL", "deepseek/deepseek-v4-flash")
 MAX_PASSOS = 8
 CATEGORIAS = ["passagem", "hospedagem", "alimentacao", "transporte", "passeios", "compras", "seguro", "outros"]
 
@@ -184,34 +185,61 @@ def historico(limite=30):
         rows = rows[1:]
     return [{"role": p, "content": t} for p, t in rows]
 
-def chamar(msgs):
-    r = requests.post(API_URL, timeout=90, headers={"Authorization": f"Bearer {API_KEY}", "content-type": "application/json"},
-                      json={"model": MODELO, "max_tokens": 2048, "system": sistema(), "tools": TOOLS, "messages": msgs})
+def post(caminho, corpo):
+    r = requests.post(BASE_URL + caminho, timeout=90, json=corpo,
+                      headers={"Authorization": f"Bearer {API_KEY}", "content-type": "application/json"})
     if r.status_code >= 400:
         raise RuntimeError(f"API {r.status_code}: {r.text[:300]}")
     return r.json()
 
-def responder(texto):
-    if not API_KEY:
-        return "⚠️ Falta configurar `COMMANDCODE_API_KEY` no Render (Environment)."
-    msgs = historico() + [{"role": "user", "content": texto}]
+def executar(nome, args):
+    try:
+        out = FUNCS[nome](**(args or {}))
+    except Exception as e:
+        out = {"erro": str(e)}
+    return json.dumps(out, ensure_ascii=False, default=str)[:12000]
+
+def loop_anthropic(msgs):
+    """Modelos Claude: endpoint /messages."""
     final = ""
     for _ in range(MAX_PASSOS):
-        r = chamar(msgs)
+        r = post("/messages", {"model": MODELO, "max_tokens": 2048, "system": sistema(), "tools": TOOLS, "messages": msgs})
         blocos = r.get("content", [])
         final = "\n".join(b["text"] for b in blocos if b.get("type") == "text")
         usos = [b for b in blocos if b.get("type") == "tool_use"]
         if not usos: break
         msgs.append({"role": "assistant", "content": blocos})
-        resultados = []
-        for u in usos:
+        msgs.append({"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": u["id"], "content": executar(u["name"], u.get("input"))} for u in usos]})
+    return final
+
+TOOLS_OPENAI = [{"type": "function", "function": {"name": t["name"], "description": t["description"],
+                 "parameters": t["input_schema"]}} for t in TOOLS]
+
+def loop_openai(msgs):
+    """Demais modelos (DeepSeek, GPT, Kimi, Qwen...): endpoint /chat/completions."""
+    msgs = [{"role": "system", "content": sistema()}] + msgs
+    final = ""
+    for _ in range(MAX_PASSOS):
+        r = post("/chat/completions", {"model": MODELO, "max_tokens": 2048, "tools": TOOLS_OPENAI, "messages": msgs})
+        m = r["choices"][0]["message"]
+        final = m.get("content") or ""
+        chamadas = m.get("tool_calls") or []
+        if not chamadas: break
+        msgs.append({"role": "assistant", "content": m.get("content"), "tool_calls": chamadas})
+        for tc in chamadas:
             try:
-                out = FUNCS[u["name"]](**(u.get("input") or {}))
-            except Exception as e:
-                out = {"erro": str(e)}
-            resultados.append({"type": "tool_result", "tool_use_id": u["id"],
-                               "content": json.dumps(out, ensure_ascii=False, default=str)[:12000]})
-        msgs.append({"role": "user", "content": resultados})
+                args = json.loads(tc["function"].get("arguments") or "{}")
+            except ValueError:
+                args = {}
+            msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": executar(tc["function"]["name"], args)})
+    return final
+
+def responder(texto):
+    if not API_KEY:
+        return "⚠️ Falta configurar `COMMANDCODE_API_KEY` no Render (Environment)."
+    msgs = historico() + [{"role": "user", "content": texto}]
+    final = (loop_anthropic if MODELO.startswith("claude") else loop_openai)(msgs)
     final = final or "Não consegui concluir. Tente reformular."
     with conectar() as c:
         c.execute("insert into chat(papel,conteudo) values('user',%s),('assistant',%s)", (texto, final))
