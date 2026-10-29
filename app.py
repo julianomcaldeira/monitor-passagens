@@ -55,11 +55,18 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-try:
-    with app.app_context():
-        init()
-except Exception as e:
-    print("init", e)
+_init_ok = False
+
+@app.before_request
+def preparar_banco():
+    # Cria as tabelas no primeiro request de cada processo (não no import, para não abrir conexão antes do fork).
+    global _init_ok
+    if not _init_ok:
+        try:
+            init()
+            _init_ok = True
+        except Exception as e:
+            print("init", e)
 
 def origem_escolhida():
     o = request.args.get("origem", "VCP")

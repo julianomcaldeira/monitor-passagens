@@ -2,12 +2,19 @@ import os
 from psycopg_pool import ConnectionPool
 
 _pool = None
+_pid = None
 
 def get_pool():
-    global _pool
-    if _pool is None:
-        dsn = os.environ["DATABASE_URL"]
-        _pool = ConnectionPool(conninfo=dsn, min_size=2, max_size=20, kwargs={"autocommit": True}, open=True)
+    """Um pool por processo: conexões SSL não podem ser compartilhadas entre workers do gunicorn."""
+    global _pool, _pid
+    if _pool is None or _pid != os.getpid():
+        _pid = os.getpid()
+        _pool = ConnectionPool(
+            conninfo=os.environ["DATABASE_URL"], min_size=1, max_size=10, open=True,
+            check=ConnectionPool.check_connection,  # testa a conexão antes de usar e descarta se caiu
+            max_idle=120, max_lifetime=1800,
+            kwargs={"autocommit": True, "keepalives": 1, "keepalives_idle": 30,
+                    "keepalives_interval": 10, "keepalives_count": 3})
     return _pool
 
 def conectar():
