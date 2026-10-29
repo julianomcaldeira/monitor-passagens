@@ -24,14 +24,80 @@
 <div class="mt-3 h-2.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden flex"><div class="bg-indigo-500" style="width:{{[p1,100]|min}}%"></div><div class="bg-indigo-300 dark:bg-indigo-800" style="width:{{[p2,[100-p1,0]|max]|min}}%"></div></div>
 <p class="text-xs text-slate-500 mt-1">Escuro = gasto · claro = previsto</p>{% endif %}
 
-<div data-tabs="vg" class="inline-flex gap-1 rounded-xl bg-slate-200 dark:bg-slate-800 p-1 mt-8 mb-4">
-  <button class="tab on" data-tab="roteiro">🗓️ Roteiro</button>
+<div data-tabs="vg" class="flex overflow-x-auto max-w-full w-fit gap-1 rounded-xl bg-slate-200 dark:bg-slate-800 p-1 mt-8 mb-4">
+  <button class="tab on" data-tab="plano">🗺️ Plano</button>
+  <button class="tab" data-tab="roteiro">🗓️ Roteiro</button>
   <button class="tab" data-tab="gastos">💰 Gastos</button>
   <button class="tab" data-tab="passagens">✈️ Passagens</button>
   <button class="tab" data-tab="editar">⚙️ Editar</button>
 </div>
 
-<section data-grupo="vg" data-tab="roteiro" id="roteiro">
+<section data-grupo="vg" data-tab="plano" id="plano">
+  {% if v.plano_status == 'gerando' %}
+  <div class="card p-8 text-center">
+    <div class="text-4xl animate-bounce">🗺️</div>
+    <h3 class="font-bold text-lg mt-3">Montando o seu plano…</h3>
+    <p class="text-sm text-slate-500 mt-1">A IA está buscando passagens e escolhendo hotéis, restaurantes, passeios e o roteiro. Leva de 1 a 2 minutos; a página atualiza sozinha.</p>
+    <p class="text-xs text-slate-400 mt-3" id="tempo"></p>
+  </div>
+  {% else %}
+  <div class="grid gap-4 lg:grid-cols-3">
+    <div class="card p-5 lg:col-span-2">
+      {% if v.plano_status == 'erro' %}<div class="rounded-xl bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 p-3 text-sm mb-3">{{v.plano_resumo}}</div>{% endif %}
+      {% if v.plano_resumo and v.plano_status == 'pronto' %}<p class="text-sm leading-relaxed">✨ {{v.plano_resumo}}</p>{% endif %}
+      {% if v.preferencias %}<p class="text-xs text-slate-500 mt-3"><b>Preferências:</b> {{v.preferencias}}{% if v.viajantes and v.viajantes > 1 %} · {{v.viajantes}} viajantes{% endif %}</p>{% endif %}
+      {% if not v.plano_status %}<p class="text-sm text-slate-500">Esta viagem ainda não tem um plano gerado pela IA.</p>{% endif %}
+      <div class="flex flex-wrap gap-2 mt-4">
+        <form method="post" action="/viagens/{{v.id}}/replanejar" onsubmit="return {{'true' if not v.plano_status else 'confirm(\'Gerar um novo plano? O roteiro e as estimativas atuais serão substituídos (sugestões escolhidas e gastos pagos ficam).\')'}}">
+          <button class="btn">✨ {{'Gerar plano com IA' if not v.plano_status else 'Gerar de novo'}}</button></form>
+        <a class="btn-sec" href="/assistente?q={{('Sobre a viagem #' ~ v.id ~ ': quero ajustar o plano. ')|urlencode}}">Ajustar com o assistente</a>
+      </div>
+    </div>
+    <div class="card p-5">
+      <div class="flex justify-between items-center"><h3 class="font-bold">Checklist</h3><span class="text-sm font-semibold text-indigo-600">{{prog.feitos}}/{{prog.total}}</span></div>
+      <div class="mt-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800"><div class="h-full rounded-full bg-emerald-500" style="width:{{prog.pct}}%"></div></div>
+      <ul class="mt-3 space-y-2 text-sm">
+        {% for nome, ok, dica in prog.itens %}<li class="flex gap-2"><span>{{'✅' if ok else '⬜'}}</span><div><span class="{{'line-through text-slate-400' if ok}}">{{nome}}</span>{% if not ok %}<div class="text-xs text-slate-500">{{dica}}</div>{% endif %}</div></li>{% endfor %}
+      </ul>
+      {% if v.fechada_em %}
+      <a href="/viagens/{{v.id}}/resumo" class="btn w-full mt-4 bg-emerald-600 hover:bg-emerald-500">📋 Ver viagem fechada</a>
+      {% else %}
+      <form method="post" action="/viagens/{{v.id}}/fechar" onsubmit="return {{'true' if prog.feitos == prog.total else 'confirm(\'Ainda há itens pendentes no checklist. Fechar a viagem mesmo assim?\')'}}">
+        <button class="btn w-full mt-4 bg-emerald-600 hover:bg-emerald-500">🔒 Fechar viagem</button></form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% for tipo, (ic, nome) in tipos.items() %}{% set lista = v.sugestoes|selectattr('tipo', 'equalto', tipo)|rejectattr('status', 'equalto', 'descartada')|list %}
+  {% if lista %}
+  <h3 class="font-bold mt-8 mb-3">{{ic}} {{nome}}</h3>
+  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    {% for s in lista %}
+    <div class="card p-4 flex flex-col {{'ring-2 ring-emerald-500' if s.status=='escolhida'}}">
+      <div class="flex justify-between gap-2 items-start"><b>{{s.titulo}}</b>{% if s.status=='escolhida' %}<span class="pill pill-verde">Escolhido</span>{% endif %}</div>
+      {% if s.local %}<div class="text-xs text-slate-500 mt-0.5">📍 {{s.local}}</div>{% endif %}
+      {% if s.descricao %}<p class="text-sm text-slate-600 dark:text-slate-300 mt-2">{{s.descricao}}</p>{% endif %}
+      <div class="flex-1"></div>
+      {% if tipo != 'dica' %}
+      <div class="flex items-center justify-between gap-2 mt-3">
+        <span class="text-sm font-bold">{% if s.preco_estimado %}~{{brl(s.preco_estimado|float)}}<span class="text-xs font-normal text-slate-500">{{' /noite' if tipo=='hotel' else ' /pessoa' if tipo in ('restaurante','passeio') else ''}}</span>{% endif %}</span>
+        <div class="flex gap-1.5">
+          {% if s.link %}<a href="{{s.link}}" target="_blank" class="btn-sec px-3 py-1.5 text-xs">{{'Ver preços' if tipo=='hotel' else 'Mapa'}}</a>{% endif %}
+          <form method="post" action="/sugestoes/{{s.id}}/status"><input type="hidden" name="status" value="{{'sugerida' if s.status=='escolhida' else 'escolhida'}}">
+            <button class="{{'btn-sec' if s.status=='escolhida' else 'btn'}} px-3 py-1.5 text-xs">{{'Desfazer' if s.status=='escolhida' else 'Escolher'}}</button></form>
+          {% if s.status!='escolhida' %}<form method="post" action="/sugestoes/{{s.id}}/status"><input type="hidden" name="status" value="descartada"><button class="text-slate-400 hover:text-red-500 px-1" title="Descartar">✕</button></form>{% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}{% endfor %}
+  {% if v.sugestoes %}<p class="text-xs text-slate-400 mt-4">Hotéis, restaurantes e passeios são sugestões da IA com preços estimados: confirme disponibilidade e valores nos links. A passagem é monitorada com preços reais.</p>{% endif %}
+  {% endif %}
+</section>
+
+<section data-grupo="vg" data-tab="roteiro" id="roteiro" class="hidden">
   {% for dia, itens in dias.items() %}
   <h3 class="font-bold mt-5 mb-2">{% if dia %}{{['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][dia.weekday()]}}, {{data_br(dia)}}{% if v.data_inicio %} · Dia {{(dia - v.data_inicio).days + 1}}{% endif %}{% else %}Sem data{% endif %}</h3>
   <div class="space-y-2">
@@ -123,5 +189,15 @@
 <script>
   const h = location.hash.slice(1);
   if (h) document.querySelector('[data-tabs="vg"] [data-tab="' + h + '"]')?.click();
+  document.querySelectorAll('[data-tabs="vg"] button').forEach(b => b.addEventListener('click', () => history.replaceState(null, '', '#' + b.dataset.tab)));
+  {% if v.plano_status == 'gerando' %}
+  const ini = Date.now();
+  setInterval(async () => {
+    document.getElementById('tempo').textContent = Math.round((Date.now() - ini) / 1000) + 's';
+  }, 1000);
+  setInterval(async () => {
+    try { const j = await (await fetch('/viagens/{{v.id}}/plano_status')).json(); if (j.status !== 'gerando') location.reload(); } catch (e) {}
+  }, 4000);
+  {% endif %}
 </script>
 {% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block titulo %}Planejar viagem · Gestor de Viagens{% endblock %}
+{% block conteudo %}
+<h1 class="text-2xl md:text-3xl font-extrabold">🗺️ Planejar viagem</h1>
+<p class="text-sm text-slate-500 mt-1">Diga para onde, quando e do que você gosta. A IA monta o plano completo: hotéis, restaurantes, passeios, transporte, dicas, roteiro dia a dia e custos. A passagem passa a ser monitorada.</p>
+
+<form method="post" class="mt-6 space-y-5 max-w-4xl" onsubmit="this.querySelector('button[type=submit]').disabled=true;this.querySelector('button[type=submit]').textContent='Criando plano…'">
+  <section class="card p-5">
+    <h2 class="font-bold mb-4">1. Destino e período</h2>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="sm:col-span-2"><label class="lbl">Destino</label><input class="inp" name="destino" required placeholder="Monte Carlo, Mônaco"></div>
+      <div class="sm:col-span-2"><label class="lbl">Nome da viagem (opcional)</label><input class="inp" name="nome" placeholder="Torneio de Monte Carlo 2027"></div>
+      <div><label class="lbl">Ida</label><input class="inp" type="date" name="data_inicio" required min="{{hoje.isoformat()}}"></div>
+      <div><label class="lbl">Volta</label><input class="inp" type="date" name="data_fim" required min="{{hoje.isoformat()}}"></div>
+      <div><label class="lbl">Saindo de</label><select class="inp" name="origem">{% for cod, nome in aeroportos.items() %}<option value="{{cod}}" {{'selected' if (p.aeroporto_padrao or 'VCP')==cod}}>{{nome}}</option>{% endfor %}</select></div>
+      <div><label class="lbl">Viajantes</label><input class="inp" type="number" name="viajantes" min="1" max="12" value="1"></div>
+    </div>
+  </section>
+
+  <section class="card p-5">
+    <h2 class="font-bold mb-4">2. Orçamento e estilo</h2>
+    <div class="grid gap-3 sm:grid-cols-3">
+      <div><label class="lbl">Orçamento total (R$)</label><input class="inp" name="orcamento" inputmode="decimal" value="{{p.orcamento_medio|int if p.orcamento_medio}}" placeholder="20000"></div>
+      <div><label class="lbl">Ritmo</label><select class="inp" name="ritmo"><option>Equilibrado</option><option>Tranquilo, sem pressa</option><option>Intenso, ver o máximo</option></select></div>
+      <div><label class="lbl">Hospedagem</label><select class="inp" name="hospedagem"><option>Bom custo-benefício</option><option>Econômica</option><option>Confortável (4 estrelas)</option><option>Luxo</option><option>Apartamento / Airbnb</option></select></div>
+    </div>
+    <label class="lbl mt-5">Interesses</label>
+    <div class="flex flex-wrap gap-2">
+      {% for i in interesses %}<label class="cursor-pointer"><input type="checkbox" name="interesses" value="{{i}}" class="peer sr-only">
+        <span class="inline-block rounded-full border border-slate-300 dark:border-slate-700 px-3.5 py-1.5 text-sm font-medium peer-checked:bg-indigo-600 peer-checked:border-indigo-600 peer-checked:text-white">{{i}}</span></label>{% endfor %}
+    </div>
+    <label class="lbl mt-5">Algo mais que a IA deve saber?</label>
+    <textarea class="inp" name="extras" rows="3" placeholder="Quero assistir as quartas e a semifinal do torneio; viajo com minha esposa; prefiro não alugar carro..."></textarea>
+    {% if p.estilo or p.preferencias %}<p class="text-xs text-slate-500 mt-2">O seu <a href="/perfil" class="text-indigo-600">perfil</a> também será considerado.</p>{% endif %}
+  </section>
+
+  <button type="submit" class="btn w-full sm:w-auto px-8 py-3 text-base">✨ Criar plano com IA</button>
+  <p class="text-xs text-slate-500">A geração leva de 1 a 2 minutos. Você pode sair da página que o plano continua sendo montado.</p>
+</form>
+{% endblock %}

@@ -73,6 +73,16 @@ def t_ver_viagem(viagem_id):
     if not v: return {"erro": "viagem não encontrada"}
     return json.loads(json.dumps(v, default=str))
 
+def t_planejar_viagem(viagem_id):
+    import planejador
+    planejador.iniciar(viagem_id)
+    return {"ok": True, "info": "Plano completo sendo gerado em segundo plano (1 a 2 min).", "link": f"/viagens/{viagem_id}"}
+
+def t_escolher_sugestao(sugestao_id, escolher=True):
+    with conectar() as c:
+        c.execute("update sugestoes set status=%s where id=%s", ("escolhida" if escolher else "sugerida", sugestao_id))
+    return {"ok": True}
+
 def t_criar_viagem(nome, destino=None, data_inicio=None, data_fim=None, orcamento=None, notas=None):
     cod = (sv.resolver(destino) or (None,))[0] if destino else None
     with conectar() as c:
@@ -142,6 +152,10 @@ TOOLS = [
     tool("registrar_gasto", "Registra um gasto (pago=true) ou previsão de gasto (pago=false) numa viagem, em reais.",
          {"viagem_id": I, "valor": N, "categoria": {"type": "string", "enum": CATEGORIAS}, "descricao": S,
           "data": DATA, "pago": B}, ["viagem_id", "valor"]),
+    tool("planejar_viagem", "Gera o plano completo de uma viagem já criada (hotéis, restaurantes, passeios, transporte, "
+         "dicas, roteiro e custos) e monitora a passagem. Use depois de criar_viagem.", {"viagem_id": I}, ["viagem_id"]),
+    tool("escolher_sugestao", "Marca (ou desmarca) uma sugestão do plano como escolhida pelo usuário.",
+         {"sugestao_id": I, "escolher": B}, ["sugestao_id"]),
     tool("atualizar_perfil", "Salva preferências do usuário quando ele contar algo novo sobre como gosta de viajar.",
          {"nome": S, "aeroporto_padrao": ORIG, "orcamento_medio": N, "estilo": S, "companhias": S, "preferencias": S}),
 ]
@@ -155,9 +169,14 @@ def perfil():
 
 def viagem(i):
     with conectar() as c:
-        r = c.execute("select id,nome,destino,codigo_destino,data_inicio,data_fim,orcamento,status,notas from viagens where id=%s", (i,)).fetchone()
+        campos = ("id", "nome", "destino", "codigo_destino", "data_inicio", "data_fim", "orcamento", "status", "notas",
+                  "origem", "viajantes", "preferencias", "plano_status", "plano_resumo", "fechada_em")
+        r = c.execute("select " + ",".join(campos) + " from viagens where id=%s", (i,)).fetchone()
         if not r: return None
-        v = dict(zip(("id", "nome", "destino", "codigo_destino", "data_inicio", "data_fim", "orcamento", "status", "notas"), r))
+        v = dict(zip(campos, r))
+        v["sugestoes"] = [dict(zip(("id", "tipo", "titulo", "descricao", "preco_estimado", "local", "link", "status"), x))
+                          for x in c.execute("""select id,tipo,titulo,descricao,preco_estimado,local,link,status
+                              from sugestoes where viagem_id=%s order by (status='escolhida') desc, id""", (i,))]
         v["roteiro"] = [dict(zip(("id", "dia", "horario", "titulo", "descricao"), x)) for x in c.execute(
             "select id,dia,horario,titulo,descricao from roteiro where viagem_id=%s order by dia nulls last, horario nulls last, id", (i,))]
         v["gastos"] = [dict(zip(("id", "categoria", "descricao", "valor", "data", "pago"), x)) for x in c.execute(
@@ -234,6 +253,18 @@ def loop_openai(msgs):
                 args = {}
             msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": executar(tc["function"]["name"], args)})
     return final
+
+def gerar_texto(system, prompt, max_tokens=4000):
+    """Uma chamada simples, sem ferramentas (usada pelo planejador)."""
+    if not API_KEY:
+        raise RuntimeError("falta configurar COMMANDCODE_API_KEY")
+    msgs = [{"role": "user", "content": prompt}]
+    if MODELO.startswith("claude"):
+        r = post("/messages", {"model": MODELO, "max_tokens": max_tokens, "system": system, "messages": msgs})
+        return "".join(b.get("text", "") for b in r.get("content", []))
+    r = post("/chat/completions", {"model": MODELO, "max_tokens": max_tokens,
+                                   "messages": [{"role": "system", "content": system}] + msgs})
+    return r["choices"][0]["message"].get("content") or ""
 
 def responder(texto):
     if not API_KEY:

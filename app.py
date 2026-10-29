@@ -5,6 +5,7 @@ from db import conectar, init
 from servicos import (AEROPORTOS, BRT, OPCOES_ORIGEM, TP_TOKEN, analisar, nacional, resolver,
                       buscar_data, nome_cidade, brl, data_br)
 import assistente as ia
+import planejador as pl
 
 app = Flask(__name__)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000
@@ -220,6 +221,8 @@ def criar_viagem():
 
 @app.route("/viagens/<int:i>")
 def ver_viagem(i):
+    with conectar() as c:
+        _destravar(c, i)
     v = ia.viagem(i)
     if not v: return redirect("/viagens")
     dias = {}
@@ -231,7 +234,8 @@ def ver_viagem(i):
     for g in v["gastos"]:
         por_cat[g["categoria"]] = por_cat.get(g["categoria"], 0) + float(g["valor"])
     return render_template("viagem.html", pagina="viagens", v=v, dias=dias, gasto=gasto, previsto=previsto,
-                           por_cat=sorted(por_cat.items(), key=lambda x: -x[1]), cats=ia.CATEGORIAS)
+                           por_cat=sorted(por_cat.items(), key=lambda x: -x[1]), cats=ia.CATEGORIAS,
+                           tipos=pl.TIPOS, prog=pl.progresso(v, v["sugestoes"]))
 
 @app.post("/viagens/<int:i>/editar")
 def editar_viagem(i):
@@ -280,6 +284,78 @@ def del_gasto(g):
     with conectar() as c:
         c.execute("delete from gastos where id=%s", (g,))
     return redirect((request.referrer or "/orcamento").split("#")[0] + "#gastos")
+
+# ---------- planejador ----------
+@app.route("/planejar", methods=["GET", "POST"])
+def planejar():
+    if request.method == "GET":
+        return render_template("planejar.html", pagina="planejar", interesses=pl.INTERESSES, p=ia.perfil(),
+                               aeroportos=AEROPORTOS)
+    fm = request.form
+    destino = fm.get("destino", "").strip()
+    inicio, fim = _dt(fm.get("data_inicio")), _dt(fm.get("data_fim"))
+    prefs = "; ".join(x for x in [
+        "Interesses: " + ", ".join(fm.getlist("interesses")) if fm.getlist("interesses") else "",
+        "Ritmo: " + fm["ritmo"] if fm.get("ritmo") else "",
+        "Hospedagem: " + fm["hospedagem"] if fm.get("hospedagem") else "",
+        fm.get("extras", "").strip()] if x)
+    cod = (resolver(destino) or (None,))[0] if destino else None
+    with conectar() as c:
+        i = c.execute("""insert into viagens(nome,destino,codigo_destino,data_inicio,data_fim,orcamento,origem,viajantes,preferencias)
+            values(%s,%s,%s,%s,%s,%s,%s,%s,%s) returning id""",
+            (fm.get("nome") or f"Viagem para {destino}", destino, cod, inicio, fim, _f(fm.get("orcamento")),
+             fm.get("origem") or "VCP", fm.get("viajantes", type=int) or 1, prefs or None)).fetchone()[0]
+    pl.iniciar(i)
+    return redirect(f"/viagens/{i}#plano")
+
+@app.post("/viagens/<int:i>/replanejar")
+def replanejar(i):
+    pl.iniciar(i)
+    return redirect(f"/viagens/{i}#plano")
+
+def _destravar(c, i):
+    # se o servidor reiniciou no meio da geração, o plano ficaria "gerando" para sempre
+    c.execute("""update viagens set plano_status='erro', plano_resumo='A geração foi interrompida. Clique em Gerar de novo.'
+        where id=%s and plano_status='gerando' and plano_iniciado_em < now() - interval '10 minutes'""", (i,))
+
+@app.route("/viagens/<int:i>/plano_status")
+def plano_status(i):
+    with conectar() as c:
+        _destravar(c, i)
+        r = c.execute("select plano_status from viagens where id=%s", (i,)).fetchone()
+    return jsonify(status=r[0] if r else None)
+
+@app.post("/sugestoes/<int:s>/status")
+def sugestao_status(s):
+    st = request.form.get("status")
+    if st in ("sugerida", "escolhida", "descartada"):
+        with conectar() as c:
+            c.execute("update sugestoes set status=%s where id=%s", (st, s))
+    return redirect((request.referrer or "/viagens").split("#")[0] + "#plano")
+
+@app.post("/viagens/<int:i>/fechar")
+def fechar_viagem(i):
+    with conectar() as c:
+        c.execute("update viagens set status='confirmada', fechada_em=now() where id=%s", (i,))
+        c.execute("delete from sugestoes where viagem_id=%s and status='descartada'", (i,))
+    return redirect(f"/viagens/{i}/resumo")
+
+@app.route("/viagens/<int:i>/resumo")
+def resumo_viagem(i):
+    v = ia.viagem(i)
+    if not v: return redirect("/viagens")
+    dias = {}
+    for it in v["roteiro"]:
+        dias.setdefault(it["dia"], []).append(it)
+    escolhidas = {}
+    for s in v["sugestoes"]:
+        if s["status"] == "escolhida" or (s["tipo"] == "dica" and s["status"] != "descartada"):
+            escolhidas.setdefault(s["tipo"], []).append(s)
+    por_cat = {}
+    for g in v["gastos"]:
+        por_cat[g["categoria"]] = por_cat.get(g["categoria"], 0) + float(g["valor"])
+    return render_template("resumo.html", pagina="viagens", v=v, dias=dias, escolhidas=escolhidas, tipos=pl.TIPOS,
+                           total=sum(por_cat.values()), por_cat=sorted(por_cat.items(), key=lambda x: -x[1]))
 
 # ---------- orçamento ----------
 @app.route("/orcamento")

@@ -109,6 +109,25 @@ create table if not exists chat_tarefas(
     status text not null default 'processando',
     resposta text
 );
+alter table viagens add column if not exists origem text;
+alter table viagens add column if not exists viajantes int default 1;
+alter table viagens add column if not exists preferencias text;
+alter table viagens add column if not exists plano_status text;
+alter table viagens add column if not exists plano_resumo text;
+alter table viagens add column if not exists fechada_em timestamptz;
+alter table viagens add column if not exists plano_iniciado_em timestamptz;
+create table if not exists sugestoes(
+    id serial primary key,
+    viagem_id int not null references viagens(id) on delete cascade,
+    tipo text not null,
+    titulo text not null,
+    descricao text,
+    preco_estimado numeric,
+    local text,
+    link text,
+    status text default 'sugerida',
+    criado_em timestamptz default now()
+);
 alter table monitorados add column if not exists viagem_id int references viagens(id) on delete set null;
 """
 

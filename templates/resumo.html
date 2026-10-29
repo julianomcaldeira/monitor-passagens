@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block titulo %}{{v.nome}} · Resumo{% endblock %}
+{% block head %}
+<style>@media print { aside, header, nav, .no-print { display: none !important } body { background: #fff } .card { box-shadow: none; break-inside: avoid } }</style>
+{% endblock %}
+{% block conteudo %}
+{% set orc = v.orcamento|float if v.orcamento else 0 %}
+<div class="no-print flex flex-wrap justify-between gap-2">
+  <a href="/viagens/{{v.id}}#plano" class="text-sm text-slate-500 hover:text-indigo-600">← Voltar ao plano</a>
+  <button onclick="print()" class="btn-sec">🖨️ Imprimir / PDF</button>
+</div>
+
+<div class="mt-4 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 text-white p-6 md:p-8">
+  <div class="text-xs font-bold uppercase tracking-wider text-indigo-200">{{'✅ Viagem fechada' if v.fechada_em else 'Resumo da viagem'}}</div>
+  <h1 class="text-3xl md:text-4xl font-extrabold mt-1">{{v.nome}}</h1>
+  <p class="mt-2 text-indigo-100">📍 {{v.destino or '—'}}{% if v.data_inicio %} · {{data_br(v.data_inicio)}}{% if v.data_fim %} a {{data_br(v.data_fim)}} · {{(v.data_fim - v.data_inicio).days + 1}} dias{% endif %}{% endif %}{% if v.viajantes and v.viajantes > 1 %} · {{v.viajantes}} viajantes{% endif %}</p>
+  {% if v.data_inicio and v.data_inicio > hoje %}<p class="mt-3 text-2xl font-bold">Faltam {{(v.data_inicio - hoje).days}} dias ✈️</p>{% endif %}
+  {% if v.plano_resumo and v.plano_status == 'pronto' %}<p class="mt-4 text-sm text-indigo-100 max-w-3xl">{{v.plano_resumo}}</p>{% endif %}
+</div>
+
+<div class="grid gap-3 grid-cols-2 lg:grid-cols-4 mt-4">
+  <div class="card p-4"><div class="lbl">Custo total</div><div class="text-xl font-extrabold">{{brl(total)}}</div></div>
+  <div class="card p-4"><div class="lbl">Orçamento</div><div class="text-xl font-extrabold">{{brl(orc) if orc else '—'}}</div></div>
+  <div class="card p-4"><div class="lbl">{{'Sobra' if orc - total >= 0 else 'Acima'}}</div><div class="text-xl font-extrabold {{'text-emerald-600' if orc - total >= 0 else 'text-red-600'}}">{{brl((orc - total)|abs) if orc else '—'}}</div></div>
+  <div class="card p-4"><div class="lbl">Por pessoa</div><div class="text-xl font-extrabold">{{brl(total / (v.viajantes or 1))}}</div></div>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-3 mt-6">
+  <div class="lg:col-span-2 space-y-4">
+    {% for tipo in ['hotel', 'transporte', 'passeio', 'restaurante'] %}{% if escolhidas.get(tipo) %}
+    <div class="card p-5">
+      <h2 class="font-bold">{{tipos[tipo][0]}} {{tipos[tipo][1]}}</h2>
+      <ul class="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
+        {% for s in escolhidas[tipo] %}<li class="py-2.5 flex justify-between gap-3">
+          <div><b class="text-sm">{{s.titulo}}</b>{% if s.local %}<span class="text-xs text-slate-500"> · {{s.local}}</span>{% endif %}
+          {% if s.descricao %}<div class="text-xs text-slate-500 mt-0.5">{{s.descricao}}</div>{% endif %}</div>
+          <div class="text-right shrink-0 text-sm">{% if s.preco_estimado %}~{{brl(s.preco_estimado|float)}}{% endif %}
+          {% if s.link %}<a href="{{s.link}}" target="_blank" class="no-print block text-xs text-indigo-600">abrir →</a>{% endif %}</div>
+        </li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}{% endfor %}
+
+    <div class="card p-5">
+      <h2 class="font-bold">🗓️ Roteiro dia a dia</h2>
+      {% for dia, itens in dias.items() %}
+      <h3 class="text-sm font-bold text-indigo-600 mt-4">{% if dia %}{{['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][dia.weekday()]}}, {{data_br(dia)}}{% if v.data_inicio %} · Dia {{(dia - v.data_inicio).days + 1}}{% endif %}{% else %}Sem data{% endif %}</h3>
+      <ul class="mt-1 space-y-1.5">{% for it in itens %}<li class="text-sm flex gap-3"><span class="w-12 shrink-0 text-slate-500">{{it.horario or ''}}</span><div><b>{{it.titulo}}</b>{% if it.descricao %}<span class="text-slate-500"> · {{it.descricao}}</span>{% endif %}</div></li>{% endfor %}</ul>
+      {% else %}<p class="text-sm text-slate-500 mt-2">Roteiro vazio.</p>{% endfor %}
+    </div>
+  </div>
+
+  <div class="space-y-4">
+    <div class="card p-5">
+      <h2 class="font-bold mb-3">💰 Custos</h2>
+      {% for c, val in por_cat %}<div class="flex justify-between text-sm py-1"><span>{{CAT_NOME.get(c, c)}}</span><b>{{brl(val)}}</b></div>{% endfor %}
+      <div class="flex justify-between text-sm pt-2 mt-2 border-t border-slate-200 dark:border-slate-800"><b>Total</b><b>{{brl(total)}}</b></div>
+    </div>
+    {% if v.monitorados %}<div class="card p-5">
+      <h2 class="font-bold mb-2">✈️ Passagem monitorada</h2>
+      {% for m in v.monitorados %}<p class="text-sm">{{m.origem}} → {{m.nome or m.destino}} · {{data_br(m.data_ida)}}{% if m.data_volta %} a {{data_br(m.data_volta)}}{% endif %}</p>{% endfor %}
+    </div>{% endif %}
+    {% if escolhidas.get('dica') %}<div class="card p-5">
+      <h2 class="font-bold mb-2">💡 Dicas</h2>
+      <ul class="space-y-2">{% for s in escolhidas['dica'] %}<li class="text-sm"><b>{{s.titulo}}</b>{% if s.descricao %}<div class="text-slate-500 text-xs">{{s.descricao}}</div>{% endif %}</li>{% endfor %}</ul>
+    </div>{% endif %}
+    {% if v.notas %}<div class="card p-5"><h2 class="font-bold mb-2">📝 Notas</h2><p class="text-sm whitespace-pre-line">{{v.notas}}</p></div>{% endif %}
+  </div>
+</div>
+{% endblock %}
