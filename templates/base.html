@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block titulo %}Gestor de Viagens{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+  try { if (localStorage.tema === 'escuro' || (!localStorage.tema && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark'); } catch (e) {}
+</script>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+  tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } } };
+</script>
+<style type="text/tailwindcss">
+  @layer components {
+    .card { @apply bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm; }
+    .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 transition; }
+    .btn-sec { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2.5 text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition; }
+    .inp { @apply w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500; }
+    .lbl { @apply block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5; }
+    .h-sec { @apply text-lg font-bold mt-10 mb-1; }
+    .hint { @apply text-sm text-slate-500 dark:text-slate-400 mb-4; }
+    .pill { @apply inline-block rounded-full px-2.5 py-0.5 text-xs font-bold whitespace-nowrap; }
+    .pill-verm { @apply bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300; }
+    .pill-verde { @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300; }
+    .pill-azul { @apply bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300; }
+    .pill-cinza { @apply bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300; }
+    .pill-laranja { @apply bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300; }
+    .nav-a { @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white; }
+    .nav-a.on { @apply bg-slate-800 text-white; }
+    .tab { @apply rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-500; }
+    .tab.on { @apply bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm; }
+  }
+</style>
+{% block head %}{% endblock %}
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased">
+{% set menu = [
+  ('painel', '/', '📊', 'Painel'),
+  ('assistente', '/assistente', '✨', 'Assistente'),
+  ('viagens', '/viagens', '🧳', 'Viagens'),
+  ('orcamento', '/orcamento', '💰', 'Orçamento'),
+  ('data', '/data', '🔎', 'Buscar passagens'),
+  ('monitorados', '/monitorados', '🔔', 'Monitorados'),
+  ('perfil', '/perfil', '👤', 'Perfil'),
+] %}
+<div class="flex min-h-screen">
+  <aside class="hidden md:flex w-60 shrink-0 flex-col bg-slate-900 p-4 sticky top-0 h-screen">
+    <a href="/" class="flex items-center gap-2 px-2 py-3 mb-4 text-white font-extrabold text-lg">✈️ Gestor de Viagens</a>
+    <nav class="flex flex-col gap-1">
+      {% for k, href, ic, nome in menu %}<a href="{{href}}" class="nav-a {{'on' if pagina==k}}"><span>{{ic}}</span>{{nome}}</a>{% endfor %}
+    </nav>
+    <button onclick="trocarTema()" class="nav-a mt-auto">🌓 Tema</button>
+  </aside>
+
+  <div class="flex-1 min-w-0 pb-20 md:pb-0">
+    <header class="md:hidden flex items-center justify-between bg-slate-900 text-white px-4 py-3 sticky top-0 z-20">
+      <a href="/" class="font-extrabold">✈️ Gestor de Viagens</a>
+      <button onclick="trocarTema()" aria-label="Trocar tema">🌓</button>
+    </header>
+    <main class="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
+      {% block conteudo %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<nav class="md:hidden fixed bottom-0 inset-x-0 z-20 grid grid-cols-5 bg-slate-900 text-[11px] text-slate-400 border-t border-slate-800">
+  {% for k, href, ic, nome in menu[:5] %}<a href="{{href}}" class="flex flex-col items-center py-2 {{'text-white' if pagina==k}}"><span class="text-lg">{{ic}}</span>{{nome.split()[0]}}</a>{% endfor %}
+</nav>
+
+<script>
+function trocarTema() {
+  const e = document.documentElement.classList.toggle('dark');
+  try { localStorage.tema = e ? 'escuro' : 'claro'; } catch (x) {}
+}
+document.querySelectorAll('[data-tabs]').forEach(t => t.querySelectorAll('button').forEach(b => b.onclick = () => {
+  t.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('[data-grupo="' + t.dataset.tabs + '"]').forEach(p => p.classList.toggle('hidden', p.dataset.tab !== b.dataset.tab));
+}));
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

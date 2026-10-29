@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1 class="text-2xl md:text-3xl font-extrabold">Buscar passagens</h1>
+<p class="text-sm text-slate-500 mt-1">Menor preço para uma data. Com destino, mostra também o calendário do mês para achar o dia mais barato.</p>
+
+<form method="get" action="/data" class="card p-5 mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end">
+  <div><label class="lbl">Ida</label><input class="inp" type="date" name="ida" value="{{ida}}" min="{{hoje.isoformat()}}" required></div>
+  <div><label class="lbl">Volta (opcional)</label><input class="inp" type="date" name="volta" value="{{volta}}" min="{{hoje.isoformat()}}"></div>
+  <div><label class="lbl">Saindo de</label><select class="inp" name="origem">{% for cod, nome in opcoes %}<option value="{{cod}}" {{'selected' if origem==cod}}>{{nome}}{{' ★' if cod=='VCP'}}</option>{% endfor %}</select></div>
+  <div><label class="lbl">Destino (opcional)</label><input class="inp" name="destino" value="{{destino}}" placeholder="Vazio = todos"></div>
+  <button class="btn w-full">Buscar menor preço</button>
+</form>
+{% if sem_token %}<div class="mt-4 rounded-xl bg-orange-100 text-orange-800 p-4 text-sm">⚠️ Falta configurar TP_TOKEN no Render. Sem ela a busca não traz resultados.</div>{% endif %}
+
+{% if res %}{% if res.erro %}<div class="mt-4 rounded-xl bg-orange-100 text-orange-800 p-4 text-sm">{{res.erro}}</div>{% else %}
+
+{% if res.destino %}
+<div class="flex flex-wrap items-center justify-between gap-3 mt-8">
+  <div><h2 class="text-xl font-bold">{{res.destino[1]}} · {{res.titulo}}</h2>
+  <p class="text-sm text-slate-500">Menor preço{{' por aeroporto' if origem=='todos'}} e mapa do mês{% if res.calendario and res.calendario.dias_viagem %} (viagens de ~{{res.calendario.dias_viagem}} dias){% endif %}.</p></div>
+  <form method="post" action="/monitorar" class="flex gap-2">
+    <input type="hidden" name="destino" value="{{res.destino[1]}}"><input type="hidden" name="ida" value="{{ida}}">
+    <input type="hidden" name="volta" value="{{volta}}"><input type="hidden" name="origem" value="{{origem}}">
+    <button class="btn bg-emerald-600 hover:bg-emerald-500">🔔 Monitorar esta data</button>
+    <a class="btn-sec" href="/assistente?q={{('Me ajude a planejar uma viagem para ' ~ res.destino[1] ~ ' de ' ~ ida ~ (' a ' ~ volta if volta else ''))|urlencode}}">✨ Planejar</a>
+  </form>
+</div>
+<div class="grid gap-4 lg:grid-cols-5 mt-4">
+  <div class="card p-5 lg:col-span-3">{% set cal = res.calendario %}
+  {% if cal %}
+    <div class="flex flex-wrap justify-between gap-2"><b>{{cal.mes}}</b>
+    <span class="text-sm text-slate-500">Dia mais barato: <b class="text-emerald-600">{{cal.melhor.dia}} · {{brl(cal.melhor.preco)}}</b></span></div>
+    {% if cal.escolhido %}{% set eco = cal.escolhido.preco - cal.melhor.preco %}{% if eco > 0 %}
+    <div class="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 p-3 text-sm">💡 Mudando para {{cal.melhor.dia}} você economiza {{brl(eco)}}.</div>{% endif %}{% endif %}
+    {% set cores = {'n1':'bg-emerald-200 dark:bg-emerald-900','n2':'bg-emerald-50 dark:bg-emerald-950','n3':'bg-orange-50 dark:bg-orange-950','n4':'bg-red-100 dark:bg-red-950'} %}
+    <div class="grid grid-cols-7 gap-1.5 mt-3">
+      {% for w in ['dom','seg','ter','qua','qui','sex','sáb'] %}<div class="text-center text-[11px] font-bold uppercase text-slate-400">{{w}}</div>{% endfor %}
+      {% for sem in cal.semanas %}{% for d in sem %}
+      {% if d.info %}<a href="{{d.info.link}}" target="_blank" title="Saindo de {{d.info.origem}}" class="rounded-lg p-1.5 text-center min-h-[54px] border-2 hover:brightness-95 {{cores[d.nivel]}} {{'border-indigo-500' if d.escolhido else 'border-transparent'}}">
+        <div class="text-[11px] text-slate-500">{{d.dia}}</div><div class="text-xs font-bold mt-1 {{'text-emerald-700 dark:text-emerald-300' if d.menor}}">{{(d.info.preco/1000)|round(1) if d.info.preco >= 10000 else d.info.preco|int}}{{'k' if d.info.preco >= 10000}}</div></a>
+      {% else %}<div class="rounded-lg p-1.5 text-center min-h-[54px] border-2 {{'border-indigo-500' if d.escolhido else 'border-transparent'}} {{'' if d.fora else 'bg-slate-50 dark:bg-slate-800/50'}}"><div class="text-[11px] {{'text-slate-300 dark:text-slate-700' if d.fora else 'text-slate-500'}}">{{d.dia}}</div><div class="text-xs text-slate-300 mt-1">–</div></div>{% endif %}
+      {% endfor %}{% endfor %}
+    </div>
+    <div class="flex flex-wrap gap-3 text-xs text-slate-500 mt-3"><span>🟩 mais barato</span><span>🟧 médio</span><span>🟥 caro</span><span>▢ data escolhida</span></div>
+  {% else %}<p class="text-sm text-slate-500">Sem preços para esse mês. Tente outro mês ou destino.</p>{% endif %}
+  </div>
+  <div class="lg:col-span-2 space-y-2">
+    {% for v in res.aeroportos %}<a class="card p-4 flex justify-between items-center hover:ring-1 hover:ring-indigo-500" href="{{v.link}}" target="_blank">
+      <div><div class="text-xs text-slate-500">Saindo de</div><b>{{v.aeroporto}}</b><div class="text-xs text-slate-500">{{v.ida}}{% if v.volta %} a {{v.volta}}{% endif %}{% if v.cia %} · {{v.cia}}{% endif %}{% if v.escalas == 0 %} · direto{% endif %}</div></div>
+      <div class="text-right"><b class="text-lg">{{brl(v.preco)}}</b><div class="text-xs text-indigo-600">ver →</div></div></a>
+    {% else %}<div class="card p-4 text-sm text-slate-500">Sem preço exato para essa data. Use o calendário para ver dias próximos.</div>{% endfor %}
+  </div>
+</div>
+
+{% else %}
+<h2 class="text-xl font-bold mt-8">Menor preço para {{res.titulo}}</h2>
+<p class="hint">{{'Ida e volta' if res.ida_volta else 'Só ida'}}. Para monitorar uma data, informe o destino.</p>
+<div data-tabs="dt" class="inline-flex gap-1 rounded-xl bg-slate-200 dark:bg-slate-800 p-1 mb-4">
+  <button class="tab on" data-tab="nac">🇧🇷 Nacionais <span class="text-slate-400">{{res.nac|length}}</span></button>
+  <button class="tab" data-tab="int">🌎 Internacionais <span class="text-slate-400">{{res.inter|length}}</span></button>
+</div>
+{% for chave, lista in [('nac', res.nac), ('int', res.inter)] %}
+<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 {{'hidden' if chave!='nac'}}" data-grupo="dt" data-tab="{{chave}}">
+  {% for v in lista %}<a class="card p-4 hover:ring-1 hover:ring-indigo-500" href="{{v.link}}" target="_blank">
+    <div class="flex justify-between gap-2"><b>{{v.nome}}</b>{% if loop.first %}<span class="pill pill-verde">mais barato</span>{% endif %}</div>
+    <div class="text-2xl font-extrabold mt-2">{{brl(v.preco)}}</div>
+    <div class="text-xs text-slate-500 mt-1">{{v.ida}}{% if v.volta %} a {{v.volta}}{% endif %} · {{v.aeroporto}}{% if v.cia %} · {{v.cia}}{% endif %}{% if v.escalas == 0 %} · direto{% endif %}</div>
+  </a>{% else %}<div class="card p-4 text-sm text-slate-500">Nenhum preço encontrado.</div>{% endfor %}
+</div>{% endfor %}
+{% endif %}
+<p class="text-xs text-slate-400 mt-6">Preços de buscas recentes de outros viajantes. Confirme no site antes de comprar.</p>
+{% endif %}{% endif %}
+{% endblock %}

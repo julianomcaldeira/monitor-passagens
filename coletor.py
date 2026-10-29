@@ -40,7 +40,10 @@ def salvar(c, x, origem, tipo):
                x["price"], x.get("airline"), link(x)))
 
 def main():
-    c = conectar()
+    with conectar() as c:
+        coletar(c)
+
+def coletar(c):
     init(c)
     destinos = [r[0] for r in c.execute("select codigo from destinos").fetchall()]
 

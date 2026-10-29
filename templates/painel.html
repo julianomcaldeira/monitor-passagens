@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <h1 class="text-2xl md:text-3xl font-extrabold">Painel</h1>
+    <p class="text-sm text-slate-500 mt-1">{% if ult %}Preços atualizados em {{ult}}.{% else %}Aguardando a primeira coleta.{% endif %}</p>
+  </div>
+  <div class="flex flex-wrap gap-1.5 text-sm">
+    {% for cod, nome in opcoes %}<a href="/?origem={{cod}}" class="rounded-full px-3.5 py-1.5 font-semibold border {{'bg-indigo-600 border-indigo-600 text-white' if origem==cod else 'border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'}}">{{nome}}{% if cod=='VCP' %} ★{% endif %}</a>{% endfor %}
+  </div>
+</div>
+
+<a href="/assistente" class="mt-6 flex items-center gap-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-5 text-white hover:brightness-110">
+  <span class="text-3xl">✨</span>
+  <div class="flex-1"><div class="font-bold">Pergunte ao seu assistente de viagens</div>
+  <div class="text-sm text-indigo-100">"Monte um roteiro de 5 dias em Lisboa" · "Qual o mês mais barato para Santiago?"</div></div>
+  <span class="hidden sm:block font-semibold">Abrir →</span>
+</a>
+
+<div class="mt-6 grid gap-4 lg:grid-cols-3">
+  {% if destaque %}
+  <section class="card p-6 lg:col-span-2 border-l-4 {{'border-l-red-500' if destaque.cor=='verm' else 'border-l-emerald-500'}}">
+    <div class="text-xs font-bold uppercase tracking-wider {{'text-red-600' if destaque.cor=='verm' else 'text-emerald-600'}}">🔥 Melhor oportunidade agora</div>
+    <h2 class="text-2xl font-bold mt-1">{{destaque.nome}}</h2>
+    <div class="text-4xl font-extrabold mt-2">{{brl(destaque.atual.preco)}} <span class="text-base font-medium text-slate-500">ida e volta</span></div>
+    <p class="text-sm text-slate-500 mt-2"><b class="text-slate-700 dark:text-slate-200">{{destaque.pct}}% abaixo do normal</b> (economia de {{brl(destaque.economia)}}) · {{destaque.atual.ida}}{% if destaque.atual.volta %} a {{destaque.atual.volta}}{% endif %} · {{destaque.atual.aeroporto}}{% if destaque.atual.cia %} · {{destaque.atual.cia}}{% endif %}</p>
+    <a class="btn mt-4" href="{{destaque.atual.link}}" target="_blank">Ver e comprar →</a>
+  </section>
+  {% else %}
+  <section class="card p-6 lg:col-span-2">
+    <div class="text-xs font-bold uppercase tracking-wider text-slate-500">Nenhuma oportunidade forte agora</div>
+    <h2 class="text-xl font-bold mt-1">Os preços estão dentro do normal</h2>
+    <p class="text-sm text-slate-500 mt-2">Quando um trecho ficar pelo menos 15% abaixo do que costuma custar, ele aparece aqui.</p>
+  </section>
+  {% endif %}
+
+  <section class="card p-5">
+    <div class="flex items-center justify-between"><h2 class="font-bold">Próximas viagens</h2><a href="/viagens" class="text-sm text-indigo-600 font-semibold">Ver todas</a></div>
+    <div class="mt-3 space-y-2">
+      {% for v in viagens %}
+      <a href="/viagens/{{v.id}}" class="block rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 hover:ring-1 hover:ring-indigo-500">
+        <div class="flex justify-between gap-2"><b class="truncate">{{v.nome}}</b><span class="pill pill-azul">{{STATUS.get(v.status, v.status)}}</span></div>
+        <div class="text-xs text-slate-500 mt-1">{% if v.inicio %}{{data_br(v.inicio)}}{% if v.fim %} a {{data_br(v.fim)}}{% endif %} · {% endif %}{{brl(v.gasto)}}{% if v.orcamento %} de {{brl(v.orcamento)}}{% endif %}</div>
+      </a>
+      {% else %}
+      <p class="text-sm text-slate-500">Nenhuma viagem planejada.</p>
+      <a href="/viagens" class="btn-sec w-full mt-2">+ Planejar viagem</a>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<h2 class="h-sec">Meus destinos</h2>
+<p class="hint">Ordenados do melhor momento de compra para o pior.</p>
+<form method="post" action="/destinos" class="flex gap-2 max-w-xl mb-4">
+  <input class="inp" name="q" placeholder="Adicionar destinos: Lisboa, Orlando, Santiago..." required>
+  <button class="btn shrink-0">Adicionar</button>
+</form>
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+{% for d in cards %}{% set a = d.a %}
+  <div class="card p-5 flex flex-col relative">
+    <form method="post" action="/destinos/{{d.id}}/del" onsubmit="return confirm('Remover {{d.nome}}?')" class="absolute top-3 right-3"><button class="text-slate-400 hover:text-red-500 p-1" title="Remover">✕</button></form>
+    <div class="text-lg font-bold pr-6">{{d.nome}} <span class="text-xs font-medium text-slate-400">{{d.codigo}}</span></div>
+    {% if a %}
+    <div class="mt-2"><span class="pill pill-{{a.cor}}">{{a.selo}}{% if a.n >= 5 and a.pct > 0 %} · {{a.pct}}% abaixo{% elif a.n >= 5 and a.pct < 0 %} · {{a.pct|abs}}% acima{% endif %}</span></div>
+    <p class="text-sm text-slate-500 mt-1.5">{{a.frase}}</p>
+    <div class="text-3xl font-extrabold mt-3">{{brl(a.atual.preco)}} <span class="text-sm font-medium text-slate-500">ida e volta</span></div>
+    <p class="text-sm mt-2 leading-relaxed">📅 <b>{{a.atual.ida}}{% if a.atual.volta %} a {{a.atual.volta}}{% endif %}</b>{% if a.atual.dias %} ({{a.atual.dias}} dias){% endif %}<br>🛫 {{a.atual.aeroporto}}{% if a.atual.cia %} · {{a.atual.cia}}{% endif %}</p>
+    <div class="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5 text-center text-sm">
+      <div><span class="block text-[10px] uppercase text-slate-500">Normal</span><b>{{brl(a.mediana)}}</b></div>
+      <div><span class="block text-[10px] uppercase text-slate-500">Mínimo visto</span><b>{{brl(a.minimo)}}</b></div>
+      <div><span class="block text-[10px] uppercase text-slate-500">{{'Economia' if a.economia >= 0 else 'Mais caro'}}</span><b class="{{'text-emerald-600' if a.economia >= 0 else 'text-orange-600'}}">{{brl(a.economia|abs)}}</b></div>
+    </div>
+    {% if a.serie %}<svg class="w-full h-14 mt-3 text-indigo-500" viewBox="0 0 {{a.serie.w}} {{a.serie.h}}" preserveAspectRatio="none">
+      <polygon points="{{a.serie.area}}" fill="currentColor" fill-opacity=".08"/><polyline points="{{a.serie.linha}}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      <circle cx="{{a.serie.ux}}" cy="{{a.serie.uy}}" r="3.5" fill="currentColor"/></svg>
+    <p class="text-[11px] text-slate-400">Menor preço nas últimas {{a.n if a.n < 60 else 60}} coletas</p>{% endif %}
+    <div class="flex-1"></div>
+    <div class="mt-4 flex gap-2">
+      <a class="btn flex-1" href="{{a.atual.link}}" target="_blank">Ver e comprar →</a>
+      <a class="btn-sec" href="/assistente?q={{('Vale a pena comprar passagem para ' ~ d.nome ~ ' agora?')|urlencode}}" title="Perguntar ao assistente">✨</a>
+    </div>
+    {% else %}<p class="text-sm text-slate-500 mt-3">⏳ Aguardando a primeira coleta (até 4 horas).</p>{% endif %}
+  </div>
+{% else %}
+  <div class="card p-5 text-sm text-slate-500">Nenhum destino salvo ainda. Digite uma cidade no campo acima.</div>
+{% endfor %}
+</div>
+
+<h2 class="h-sec">Voos baratos agora</h2>
+<p class="hint">Destinos que você não salvou, com preço bom saindo do aeroporto escolhido.{% if origem=="CGH" %} Congonhas tem poucos voos internacionais.{% endif %}</p>
+<div data-tabs="bar" class="inline-flex gap-1 rounded-xl bg-slate-200 dark:bg-slate-800 p-1 mb-4">
+  <button class="tab on" data-tab="nac">🇧🇷 Nacionais <span class="font-medium text-slate-400">{{nac|length}}</span></button>
+  <button class="tab" data-tab="int">🌎 Internacionais <span class="font-medium text-slate-400">{{inter|length}}</span></button>
+</div>
+{% for chave, lista in [('nac', nac), ('int', inter)] %}
+<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 {{'hidden' if chave!='nac'}}" data-grupo="bar" data-tab="{{chave}}">
+  {% for b in lista %}<a class="card p-4 hover:ring-1 hover:ring-indigo-500" href="{{b.atual.link}}" target="_blank">
+    <div class="flex justify-between items-start gap-2"><b>{{b.nome}}</b><span class="pill pill-{{b.cor}}">{% if b.n >= 5 and b.pct > 0 %}{{b.pct}}% abaixo{% else %}{{b.selo}}{% endif %}</span></div>
+    <div class="text-2xl font-extrabold mt-2">{{brl(b.atual.preco)}}</div>
+    <div class="text-xs text-slate-500 mt-1">{{b.atual.ida}}{% if b.atual.volta %} a {{b.atual.volta}}{% endif %} · {{b.atual.aeroporto}}{% if b.atual.cia %} · {{b.atual.cia}}{% endif %}</div>
+  </a>{% else %}<div class="card p-4 text-sm text-slate-500">⏳ Aguardando a primeira coleta.</div>{% endfor %}
+</div>
+{% endfor %}
+
+<div class="card p-5 mt-10 text-sm text-slate-500 leading-7">
+  <b class="text-slate-700 dark:text-slate-200">Como ler:</b> "Normal" é o preço que o trecho costuma ter, calculado a partir de todas as coletas.<br>
+  <span class="pill pill-verm">Imperdível</span> 40% ou mais abaixo ·
+  <span class="pill pill-verde">Ótimo preço</span> 25% a 39% ·
+  <span class="pill pill-azul">Bom preço</span> 15% a 24% ·
+  <span class="pill pill-laranja">Caro agora</span> acima do normal<br>
+  Preços vêm de buscas recentes e podem ter mudado. Confirme no site antes de comprar.
+</div>
+{% endblock %}

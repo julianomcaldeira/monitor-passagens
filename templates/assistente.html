@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block titulo %}Assistente · Gestor de Viagens{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+  .md p{margin:.4em 0}.md ul{list-style:disc;padding-left:1.3em}.md ol{list-style:decimal;padding-left:1.3em}
+  .md a{color:#6366f1;text-decoration:underline}.md h1,.md h2,.md h3{font-weight:700;margin:.8em 0 .3em}
+  .md table{border-collapse:collapse;margin:.5em 0;font-size:.9em}.md td,.md th{border:1px solid #cbd5e1;padding:4px 8px}
+  .md code{background:#0001;padding:1px 4px;border-radius:4px}
+</style>
+{% endblock %}
+{% block conteudo %}
+<div class="flex flex-col h-[calc(100vh-10rem)] md:h-[calc(100vh-4rem)] -my-2">
+  <div class="flex items-center justify-between gap-3">
+    <div><h1 class="text-2xl font-extrabold">✨ Assistente</h1>
+    <p class="text-sm text-slate-500">Busca preços, monta roteiros, cria viagens e registra gastos para você.</p></div>
+    {% if msgs %}<form method="post" action="/assistente/limpar" onsubmit="return confirm('Apagar a conversa?')"><button class="btn-sec">Nova conversa</button></form>{% endif %}
+  </div>
+  {% if sem_chave %}<div class="mt-3 rounded-xl bg-orange-100 text-orange-800 p-3 text-sm">⚠️ Configure COMMANDCODE_API_KEY no Render (Environment) para ativar o assistente.</div>{% endif %}
+
+  <div id="lista" class="flex-1 overflow-y-auto mt-4 space-y-4 pr-1">
+    {% if not msgs %}
+    <div id="vazio" class="grid gap-2 sm:grid-cols-2 max-w-3xl mx-auto mt-6">
+      {% for s in ['Qual o destino internacional mais barato saindo de Viracopos em março?',
+                   'Crie uma viagem para Buenos Aires de 4 dias em maio e monte o roteiro',
+                   'Quero uma praia no Nordeste até R$ 1.500 de passagem. O que você sugere?',
+                   'Como estão meus gastos nas viagens planejadas?'] %}
+      <button class="sug card p-4 text-left text-sm hover:ring-1 hover:ring-indigo-500">{{s}}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% for m in msgs %}<div class="msg" data-papel="{{m.role}}" data-texto="{{m.content}}"></div>{% endfor %}
+  </div>
+
+  <form id="f" class="mt-3 flex gap-2 items-end">
+    <textarea id="t" rows="1" class="inp resize-none max-h-40" placeholder="Pergunte sobre passagens, roteiros, orçamento...">{{q}}</textarea>
+    <button id="b" class="btn shrink-0 h-[42px]">Enviar</button>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const lista = document.getElementById('lista'), t = document.getElementById('t'), b = document.getElementById('b');
+const md = s => DOMPurify.sanitize(marked.parse(s || ''));
+function bolha(papel, texto, html) {
+  const d = document.createElement('div');
+  d.className = papel === 'user' ? 'flex justify-end' : 'flex';
+  const c = document.createElement('div');
+  c.className = papel === 'user'
+    ? 'max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600 text-white px-4 py-2.5 text-sm whitespace-pre-wrap'
+    : 'md max-w-[92%] rounded-2xl rounded-bl-sm card px-4 py-3 text-sm leading-relaxed';
+  if (html) c.innerHTML = html; else if (papel === 'user') c.textContent = texto; else c.innerHTML = md(texto);
+  d.appendChild(c); lista.appendChild(d); lista.scrollTop = lista.scrollHeight;
+  return c;
+}
+document.querySelectorAll('.msg').forEach(m => { bolha(m.dataset.papel, m.dataset.texto); m.remove(); });
+document.querySelectorAll('.sug').forEach(s => s.onclick = () => { t.value = s.textContent.trim(); enviar(); });
+t.addEventListener('input', () => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; });
+t.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } });
+document.getElementById('f').onsubmit = e => { e.preventDefault(); enviar(); };
+async function enviar() {
+  const texto = t.value.trim(); if (!texto || b.disabled) return;
+  document.getElementById('vazio')?.remove();
+  bolha('user', texto); t.value = ''; t.style.height = 'auto'; b.disabled = true;
+  const espera = bolha('assistant', '', '<span class="animate-pulse text-slate-500">Pensando e consultando dados…</span>');
+  try {
+    const r = await fetch('/assistente/enviar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto }) });
+    const j = await r.json();
+    espera.innerHTML = j.resposta ? md(j.resposta) : '<span class="text-red-600">' + DOMPurify.sanitize(j.erro || 'Erro') + '</span>';
+  } catch (e) { espera.innerHTML = '<span class="text-red-600">Falha de conexão. Tente de novo.</span>'; }
+  b.disabled = false; lista.scrollTop = lista.scrollHeight; t.focus();
+}
+if (t.value) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+</script>
+{% endblock %}

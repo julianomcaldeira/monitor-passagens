@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1 class="text-2xl md:text-3xl font-extrabold">Perfil de viajante</h1>
+<p class="text-sm text-slate-500 mt-1">O assistente usa estas informações para personalizar sugestões. Ele também atualiza o perfil quando você conta algo novo na conversa.</p>
+{% if ok %}<div class="mt-4 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 p-3 text-sm">✓ Perfil salvo.</div>{% endif %}
+<form method="post" class="card p-5 mt-6 grid gap-4 sm:grid-cols-2 max-w-3xl">
+  <div><label class="lbl">Seu nome</label><input class="inp" name="nome" value="{{p.nome or ''}}"></div>
+  <div><label class="lbl">Aeroporto preferido</label><select class="inp" name="aeroporto_padrao">{% for cod, nome in aeroportos.items() %}<option value="{{cod}}" {{'selected' if p.aeroporto_padrao==cod}}>{{nome}} ({{cod}})</option>{% endfor %}</select></div>
+  <div><label class="lbl">Orçamento típico por viagem (R$)</label><input class="inp" name="orcamento_medio" inputmode="decimal" value="{{p.orcamento_medio or ''}}"></div>
+  <div><label class="lbl">Companhias preferidas</label><input class="inp" name="companhias" value="{{p.companhias or ''}}" placeholder="LATAM, Azul, TAP"></div>
+  <div class="sm:col-span-2"><label class="lbl">Estilo de viagem</label><input class="inp" name="estilo" value="{{p.estilo or ''}}" placeholder="Cultural, gastronomia, praia, aventura, conforto..."></div>
+  <div class="sm:col-span-2"><label class="lbl">Outras preferências</label><textarea class="inp" name="preferencias" rows="5" placeholder="Viajo com minha esposa; prefiro voos diretos; hotéis bem localizados; não gosto de acordar cedo...">{{p.preferencias or ''}}</textarea></div>
+  <div><button class="btn">Salvar perfil</button></div>
+</form>
+{% endblock %}

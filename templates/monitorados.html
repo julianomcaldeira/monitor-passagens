@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1 class="text-2xl md:text-3xl font-extrabold">Monitorados</h1>
+<p class="text-sm text-slate-500 mt-1">Passagens acompanhadas por data específica. O coletor verifica a cada 4 horas.</p>
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 mt-6">
+{% for it in itens %}
+  <div class="card p-5 relative">
+    <form method="post" action="/monitorados/{{it.id}}/del" onsubmit="return confirm('Parar de monitorar {{it.nome}}?')" class="absolute top-3 right-3"><button class="text-slate-400 hover:text-red-500 p-1">✕</button></form>
+    <div class="text-lg font-bold pr-6">{{it.nome}} <span class="text-xs text-slate-400">{{it.destino}}</span></div>
+    <p class="text-sm mt-2 leading-relaxed">🛫 {{it.origem}}<br>📅 <b>{{data_br(it.data_ida)}}{% if it.data_volta %} a {{data_br(it.data_volta)}}{% endif %}</b>{% if it.data_volta %} ({{(it.data_volta - it.data_ida).days}} dias){% endif %}</p>
+    <div class="text-2xl font-extrabold mt-3">{% if it.preco %}{{brl(it.preco)}}{% else %}<span class="text-sm font-medium text-slate-500">⏳ Aguardando coleta</span>{% endif %}</div>
+    {% if it.viagem %}<a href="/viagens/{{it.viagem_id}}" class="pill pill-azul mt-3">🧳 {{it.viagem}}</a>{% endif %}
+    <a class="btn-sec w-full mt-4" href="/data?ida={{it.data_ida}}&volta={{it.data_volta or ''}}&destino={{it.nome|urlencode}}&origem={{it.origem}}">Ver preços agora</a>
+  </div>
+{% else %}
+  <div class="card p-5 text-sm text-slate-500 sm:col-span-2">Nenhuma passagem monitorada ainda. Em "Buscar passagens", escolha datas e destino e clique em "Monitorar esta data", ou peça ao assistente.</div>
+{% endfor %}
+</div>
+{% endblock %}

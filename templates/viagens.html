@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div><h1 class="text-2xl md:text-3xl font-extrabold">Viagens</h1>
+  <p class="text-sm text-slate-500 mt-1">Planeje roteiros, acompanhe gastos e passagens de cada viagem.</p></div>
+  <a href="/assistente?q={{'Quero planejar uma viagem nova'|urlencode}}" class="btn-sec">✨ Planejar com o assistente</a>
+</div>
+
+<details class="card p-5 mt-6" {{'open' if not viagens}}>
+  <summary class="cursor-pointer font-bold">+ Nova viagem</summary>
+  <form method="post" action="/viagens" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mt-4">
+    <div><label class="lbl">Nome</label><input class="inp" name="nome" placeholder="Férias em Lisboa" required></div>
+    <div><label class="lbl">Destino</label><input class="inp" name="destino" placeholder="Lisboa"></div>
+    <div><label class="lbl">Orçamento (R$)</label><input class="inp" name="orcamento" inputmode="decimal" placeholder="15000"></div>
+    <div><label class="lbl">Início</label><input class="inp" type="date" name="data_inicio"></div>
+    <div><label class="lbl">Fim</label><input class="inp" type="date" name="data_fim"></div>
+    <div class="flex items-end"><button class="btn w-full">Criar viagem</button></div>
+  </form>
+</details>
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 mt-6">
+{% for v in viagens %}
+  {% set pct = (v.gasto / v.orcamento * 100) if v.orcamento else 0 %}
+  <a href="/viagens/{{v.id}}" class="card p-5 hover:ring-1 hover:ring-indigo-500 {{'opacity-60' if v.status=='concluida'}}">
+    <div class="flex justify-between gap-2 items-start"><b class="text-lg">{{v.nome}}</b><span class="pill {{'pill-verde' if v.status=='confirmada' else 'pill-azul' if v.status=='em_andamento' else 'pill-cinza'}}">{{STATUS.get(v.status, v.status)}}</span></div>
+    <p class="text-sm text-slate-500 mt-1">{% if v.destino %}📍 {{v.destino}} · {% endif %}{% if v.inicio %}{{data_br(v.inicio)}}{% if v.fim %} a {{data_br(v.fim)}}{% endif %}{% else %}sem datas{% endif %}</p>
+    {% if v.inicio and v.inicio > hoje %}<p class="text-sm font-semibold text-indigo-600 mt-2">Faltam {{(v.inicio - hoje).days}} dias</p>{% endif %}
+    <div class="mt-4 text-sm flex justify-between"><span>{{brl(v.gasto)}}{% if v.orcamento %} de {{brl(v.orcamento)}}{% endif %}</span><span class="text-slate-500">{{v.itens}} itens no roteiro</span></div>
+    {% if v.orcamento %}<div class="mt-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full {{'bg-red-500' if pct > 100 else 'bg-indigo-500'}}" style="width:{{[pct,100]|min}}%"></div></div>{% endif %}
+  </a>
+{% endfor %}
+</div>
+{% endblock %}

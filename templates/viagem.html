@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block titulo %}{{v.nome}} · Gestor de Viagens{% endblock %}
+{% block conteudo %}
+{% set orc = v.orcamento|float if v.orcamento else 0 %}
+<a href="/viagens" class="text-sm text-slate-500 hover:text-indigo-600">← Viagens</a>
+<div class="flex flex-wrap items-start justify-between gap-3 mt-2">
+  <div>
+    <h1 class="text-2xl md:text-3xl font-extrabold">{{v.nome}}</h1>
+    <p class="text-sm text-slate-500 mt-1">{% if v.destino %}📍 {{v.destino}} · {% endif %}{% if v.data_inicio %}{{data_br(v.data_inicio)}}{% if v.data_fim %} a {{data_br(v.data_fim)}} ({{(v.data_fim - v.data_inicio).days}} dias){% endif %}{% else %}sem datas{% endif %} · <span class="pill pill-azul">{{STATUS.get(v.status, v.status)}}</span></p>
+    {% if v.data_inicio and v.data_inicio > hoje %}<p class="text-sm font-semibold text-indigo-600 mt-1">Faltam {{(v.data_inicio - hoje).days}} dias</p>{% endif %}
+  </div>
+  <div class="flex gap-2">
+    <a class="btn" href="/assistente?q={{('Sobre a viagem #' ~ v.id ~ ' (' ~ v.nome ~ '): ')|urlencode}}">✨ Perguntar ao assistente</a>
+  </div>
+</div>
+
+<div class="grid gap-3 grid-cols-2 lg:grid-cols-4 mt-6">
+  <div class="card p-4"><div class="lbl">Orçamento</div><div class="text-xl font-extrabold">{{brl(orc) if orc else '—'}}</div></div>
+  <div class="card p-4"><div class="lbl">Gasto</div><div class="text-xl font-extrabold">{{brl(gasto)}}</div></div>
+  <div class="card p-4"><div class="lbl">Previsto</div><div class="text-xl font-extrabold">{{brl(previsto)}}</div></div>
+  <div class="card p-4"><div class="lbl">{{'Sobra' if orc - gasto - previsto >= 0 else 'Estouro'}}</div><div class="text-xl font-extrabold {{'text-emerald-600' if orc - gasto - previsto >= 0 else 'text-red-600'}}">{{brl((orc - gasto - previsto)|abs) if orc else '—'}}</div></div>
+</div>
+{% if orc %}{% set p1 = gasto / orc * 100 %}{% set p2 = previsto / orc * 100 %}
+<div class="mt-3 h-2.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden flex"><div class="bg-indigo-500" style="width:{{[p1,100]|min}}%"></div><div class="bg-indigo-300 dark:bg-indigo-800" style="width:{{[p2,[100-p1,0]|max]|min}}%"></div></div>
+<p class="text-xs text-slate-500 mt-1">Escuro = gasto · claro = previsto</p>{% endif %}
+
+<div data-tabs="vg" class="inline-flex gap-1 rounded-xl bg-slate-200 dark:bg-slate-800 p-1 mt-8 mb-4">
+  <button class="tab on" data-tab="roteiro">🗓️ Roteiro</button>
+  <button class="tab" data-tab="gastos">💰 Gastos</button>
+  <button class="tab" data-tab="passagens">✈️ Passagens</button>
+  <button class="tab" data-tab="editar">⚙️ Editar</button>
+</div>
+
+<section data-grupo="vg" data-tab="roteiro" id="roteiro">
+  {% for dia, itens in dias.items() %}
+  <h3 class="font-bold mt-5 mb-2">{% if dia %}{{['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][dia.weekday()]}}, {{data_br(dia)}}{% if v.data_inicio %} · Dia {{(dia - v.data_inicio).days + 1}}{% endif %}{% else %}Sem data{% endif %}</h3>
+  <div class="space-y-2">
+    {% for it in itens %}
+    <div class="card p-4 flex gap-4 items-start">
+      <div class="w-14 shrink-0 text-sm font-semibold text-indigo-600">{{it.horario or ''}}</div>
+      <div class="flex-1"><b>{{it.titulo}}</b>{% if it.descricao %}<p class="text-sm text-slate-500 mt-1 whitespace-pre-line">{{it.descricao}}</p>{% endif %}</div>
+      <form method="post" action="/roteiro/{{it.id}}/del"><button class="text-slate-400 hover:text-red-500">✕</button></form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card p-5 text-sm text-slate-500">Roteiro vazio. Adicione itens abaixo ou peça: <a class="text-indigo-600 font-semibold" href="/assistente?q={{('Monte o roteiro dia a dia da viagem #' ~ v.id ~ ' e salve no app')|urlencode}}">✨ "Monte o roteiro para mim"</a></div>
+  {% endfor %}
+  <form method="post" action="/viagens/{{v.id}}/roteiro" class="card p-5 mt-4 grid gap-3 sm:grid-cols-6 items-end">
+    <div class="sm:col-span-2"><label class="lbl">Dia</label><input class="inp" type="date" name="dia" min="{{v.data_inicio or ''}}" max="{{v.data_fim or ''}}"></div>
+    <div><label class="lbl">Horário</label><input class="inp" name="horario" placeholder="09:00"></div>
+    <div class="sm:col-span-3"><label class="lbl">Atividade</label><input class="inp" name="titulo" placeholder="Torre de Belém" required></div>
+    <div class="sm:col-span-5"><label class="lbl">Detalhes</label><input class="inp" name="descricao" placeholder="Opcional"></div>
+    <button class="btn">Adicionar</button>
+  </form>
+</section>
+
+<section data-grupo="vg" data-tab="gastos" id="gastos" class="hidden">
+  <div class="grid gap-4 lg:grid-cols-3">
+    <div class="lg:col-span-2 space-y-2">
+      {% for g in v.gastos %}
+      <div class="card p-4 flex items-center gap-3">
+        <span class="pill pill-cinza">{{CAT_NOME.get(g.categoria, g.categoria)}}</span>
+        <div class="flex-1 min-w-0"><div class="truncate">{{g.descricao or '—'}}</div><div class="text-xs text-slate-500">{{data_br(g.data) if g.data}}{% if not g.pago %} · previsto{% endif %}</div></div>
+        <b class="{{'text-slate-400' if not g.pago}}">{{brl(g.valor|float)}}</b>
+        <form method="post" action="/gastos/{{g.id}}/del"><button class="text-slate-400 hover:text-red-500">✕</button></form>
+      </div>
+      {% else %}<div class="card p-5 text-sm text-slate-500">Nenhum gasto registrado.</div>{% endfor %}
+    </div>
+    <div class="card p-5">
+      <h3 class="font-bold mb-3">Por categoria</h3>
+      {% set mx = por_cat[0][1] if por_cat else 1 %}
+      {% for c, val in por_cat %}<div class="text-sm mb-2"><div class="flex justify-between"><span>{{CAT_NOME.get(c, c)}}</span><b>{{brl(val)}}</b></div>
+      <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 mt-1"><div class="h-full rounded-full bg-indigo-500" style="width:{{val/mx*100}}%"></div></div></div>
+      {% else %}<p class="text-sm text-slate-500">—</p>{% endfor %}
+    </div>
+  </div>
+  <form method="post" action="/viagens/{{v.id}}/gastos" class="card p-5 mt-4 grid gap-3 sm:grid-cols-6 items-end">
+    <div><label class="lbl">Categoria</label><select class="inp" name="categoria">{% for c in cats %}<option value="{{c}}">{{CAT_NOME[c]}}</option>{% endfor %}</select></div>
+    <div class="sm:col-span-2"><label class="lbl">Descrição</label><input class="inp" name="descricao" placeholder="Hotel 4 noites"></div>
+    <div><label class="lbl">Valor (R$)</label><input class="inp" name="valor" inputmode="decimal" required></div>
+    <div><label class="lbl">Situação</label><select class="inp" name="pago"><option value="1">Pago</option><option value="0">Previsto</option></select></div>
+    <div><label class="lbl">Data</label><input class="inp" type="date" name="data"></div>
+    <button class="btn sm:col-span-6">Registrar gasto</button>
+  </form>
+</section>
+
+<section data-grupo="vg" data-tab="passagens" class="hidden">
+  <div class="grid gap-3 sm:grid-cols-2">
+    {% for m in v.monitorados %}
+    <a class="card p-4 hover:ring-1 hover:ring-indigo-500" href="/data?ida={{m.data_ida}}&volta={{m.data_volta or ''}}&destino={{(m.nome or m.destino)|urlencode}}&origem={{m.origem}}">
+      <b>{{m.origem}} → {{m.nome or m.destino}}</b><div class="text-sm text-slate-500">{{data_br(m.data_ida)}}{% if m.data_volta %} a {{data_br(m.data_volta)}}{% endif %}</div></a>
+    {% else %}<div class="card p-5 text-sm text-slate-500 sm:col-span-2">Nenhuma passagem ligada a esta viagem.</div>{% endfor %}
+  </div>
+  {% if v.destino and v.data_inicio %}
+  <form method="post" action="/monitorar" class="mt-4 flex flex-wrap gap-2">
+    <input type="hidden" name="destino" value="{{v.destino}}"><input type="hidden" name="ida" value="{{v.data_inicio}}">
+    <input type="hidden" name="volta" value="{{v.data_fim or ''}}"><input type="hidden" name="viagem_id" value="{{v.id}}">
+    <select class="inp w-auto" name="origem">{% for cod, nome in opcoes[:3] %}<option value="{{cod}}">{{nome}}</option>{% endfor %}</select>
+    <button class="btn bg-emerald-600 hover:bg-emerald-500">🔔 Monitorar passagem desta viagem</button>
+    <a class="btn-sec" href="/data?ida={{v.data_inicio}}&volta={{v.data_fim or ''}}&destino={{v.destino|urlencode}}">Ver preços agora</a>
+  </form>
+  {% else %}<p class="hint mt-3">Defina destino e data de início para monitorar a passagem.</p>{% endif %}
+</section>
+
+<section data-grupo="vg" data-tab="editar" class="hidden">
+  <form method="post" action="/viagens/{{v.id}}/editar" class="card p-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div><label class="lbl">Nome</label><input class="inp" name="nome" value="{{v.nome}}" required></div>
+    <div><label class="lbl">Destino</label><input class="inp" name="destino" value="{{v.destino or ''}}"></div>
+    <div><label class="lbl">Status</label><select class="inp" name="status">{% for k, n in STATUS.items() %}<option value="{{k}}" {{'selected' if v.status==k}}>{{n}}</option>{% endfor %}</select></div>
+    <div><label class="lbl">Início</label><input class="inp" type="date" name="data_inicio" value="{{v.data_inicio or ''}}"></div>
+    <div><label class="lbl">Fim</label><input class="inp" type="date" name="data_fim" value="{{v.data_fim or ''}}"></div>
+    <div><label class="lbl">Orçamento (R$)</label><input class="inp" name="orcamento" inputmode="decimal" value="{{v.orcamento or ''}}"></div>
+    <div class="sm:col-span-2 lg:col-span-3"><label class="lbl">Notas</label><textarea class="inp" name="notas" rows="4">{{v.notas or ''}}</textarea></div>
+    <div class="flex gap-2"><button class="btn">Salvar</button></div>
+  </form>
+  <form method="post" action="/viagens/{{v.id}}/del" onsubmit="return confirm('Apagar a viagem {{v.nome}} com roteiro e gastos?')" class="mt-4">
+    <button class="text-sm font-semibold text-red-600 hover:underline">Apagar viagem</button>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const h = location.hash.slice(1);
+  if (h) document.querySelector('[data-tabs="vg"] [data-tab="' + h + '"]')?.click();
+</script>
+{% endblock %}
