@@ -16,7 +16,11 @@ CAT_NOME = {"passagem": "Passagem", "hospedagem": "Hospedagem", "alimentacao": "
 
 app.secret_key = os.environ.get("SECRET_KEY") or hashlib.sha256(("gv:" + SENHA).encode()).hexdigest()
 app.permanent_session_lifetime = timedelta(days=30)
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")))  # cookie só via HTTPS em produção
+# O Render fica atrás de um proxy HTTPS: confia no X-Forwarded-Proto para saber que a conexão é segura
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 LIVRES = ("login", "static")
 
 @app.before_request
@@ -26,6 +30,37 @@ def auth():
     if request.path.startswith(("/assistente/enviar", "/assistente/tarefa")):
         return jsonify(erro="Sessão expirada. Recarregue a página e entre de novo."), 401
     return redirect(url_for("login", prox=request.full_path.rstrip("?")))
+
+CSP = "; ".join([
+    "default-src 'self'",
+    # 'unsafe-inline' é necessário pelos scripts e handlers inline das páginas e pelo Tailwind via CDN
+    "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+])
+SEGURANCA = {
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Content-Security-Policy": CSP,
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+
+@app.after_request
+def seguranca(r):
+    for k, v in SEGURANCA.items():
+        if k == "Strict-Transport-Security" and not request.is_secure:
+            continue  # HSTS só faz sentido em HTTPS
+        r.headers.setdefault(k, v + ("; upgrade-insecure-requests" if k == "Content-Security-Policy" and request.is_secure else ""))
+    return r
 
 @app.after_request
 def sem_cache(r):
