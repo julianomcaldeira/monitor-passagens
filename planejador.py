@@ -2,6 +2,7 @@
 import json, re, threading
 from datetime import date, timedelta
 from urllib.parse import quote_plus
+from json_repair import repair_json
 from db import conectar
 import servicos as sv
 import assistente as ia
@@ -41,10 +42,18 @@ def _passagem(v):
         return None
 
 def _json(texto):
-    m = re.search(r"\{.*\}", texto or "", re.S)
-    if not m:
-        raise ValueError("a IA não devolveu um plano válido")
-    return json.loads(m.group(0))
+    """Lê o JSON da IA tolerando cercas de markdown, vírgulas faltando e afins."""
+    t = re.sub(r"```(?:json)?", "", texto or "")
+    m = re.search(r"\{.*\}", t, re.S)
+    bruto = m.group(0) if m else t
+    try:
+        return json.loads(bruto)
+    except ValueError:
+        pass
+    r = repair_json(bruto, return_objects=True)
+    if isinstance(r, dict) and (r.get("roteiro") or r.get("hoteis")):
+        return r
+    raise ValueError("a IA não devolveu um plano válido")
 
 def gerar(viagem_id):
     v = ia.viagem(viagem_id)
@@ -80,7 +89,14 @@ Formato exato:
 Regras: 3 hotéis (preco_estimado = diária total do quarto), 6 a 8 restaurantes (preço médio por pessoa),
 5 a 8 passeios (preço por pessoa), 2 a 4 transportes, 4 a 6 dicas práticas, roteiro com 3 a 5 itens por dia
 (use as datas reais da viagem), e custos previstos TOTAIS da viagem para {viajantes} pessoa(s), por categoria."""
-    plano = _json(ia.gerar_texto(sistema, pedido, max_tokens=8000))
+    texto = ia.gerar_texto(sistema, pedido, max_tokens=8000, json_mode=True)
+    try:
+        plano = _json(texto)
+    except ValueError:
+        # segunda chance: pede para a IA corrigir a própria resposta
+        texto = ia.gerar_texto(sistema, "Corrija este JSON para que seja válido, mantendo o conteúdo. "
+                               "Responda só com o JSON:\n\n" + texto[:20000], max_tokens=8000, json_mode=True)
+        plano = _json(texto)
     salvar(v, plano, passagem)
 
 def _link(tipo, titulo, local, destino):

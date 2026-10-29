@@ -254,7 +254,7 @@ def loop_openai(msgs):
             msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": executar(tc["function"]["name"], args)})
     return final
 
-def gerar_texto(system, prompt, max_tokens=4000):
+def gerar_texto(system, prompt, max_tokens=4000, json_mode=False):
     """Uma chamada simples, sem ferramentas (usada pelo planejador)."""
     if not API_KEY:
         raise RuntimeError("falta configurar COMMANDCODE_API_KEY")
@@ -262,8 +262,14 @@ def gerar_texto(system, prompt, max_tokens=4000):
     if MODELO.startswith("claude"):
         r = post("/messages", {"model": MODELO, "max_tokens": max_tokens, "system": system, "messages": msgs})
         return "".join(b.get("text", "") for b in r.get("content", []))
-    r = post("/chat/completions", {"model": MODELO, "max_tokens": max_tokens,
-                                   "messages": [{"role": "system", "content": system}] + msgs})
+    corpo = {"model": MODELO, "max_tokens": max_tokens, "messages": [{"role": "system", "content": system}] + msgs}
+    if json_mode:
+        try:
+            r = post("/chat/completions", dict(corpo, response_format={"type": "json_object"}))
+            return r["choices"][0]["message"].get("content") or ""
+        except RuntimeError as e:
+            if "API 4" not in str(e): raise  # modelo sem suporte a modo JSON: tenta sem
+    r = post("/chat/completions", corpo)
     return r["choices"][0]["message"].get("content") or ""
 
 def responder(texto):

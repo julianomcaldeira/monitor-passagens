@@ -3,3 +3,4 @@ gunicorn
 psycopg[binary]
 psycopg-pool
 requests
+json-repair
